@@ -49,7 +49,7 @@ class Args:
     """if toggled, will log all power outputs and yaws step by step"""
     wandb_project_name: str = "benchmark-wfcrl-v2"
     """the wandb's project name"""
-    wandb_entity: str = None
+    wandb_entity: str = ""
     """the entity (team) of wandb's project"""
     save_model: bool = True
     """whether to save model into the `runs/{run_name}` folder"""

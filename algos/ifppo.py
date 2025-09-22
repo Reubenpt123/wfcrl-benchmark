@@ -36,7 +36,7 @@ class Args:
     """if toggled, this experiment will be tracked with Weights and Biases"""
     wandb_project_name: str = "cleanRL"
     """the wandb's project name"""
-    wandb_entity: str = None
+    wandb_entity: str = ""
     """the entity (team) of wandb's project"""
     save_model: bool = False
     """whether to save model into the `runs/{run_name}` folder"""
