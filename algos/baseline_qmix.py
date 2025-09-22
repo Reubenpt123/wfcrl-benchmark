@@ -42,7 +42,7 @@ class Args:
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
     cuda: bool = True
     """if toggled, cuda will be enabled by default"""
-    track: bool = True
+    track: bool = False
     """if toggled, this experiment will be tracked with Weights and Biases"""
     debug_log: bool = False
     """if toggled, will log all power outputs and yaws step by step"""
@@ -71,7 +71,7 @@ class Args:
 
     # QMIX arguments
     episode_length: int = 150
-    """side of an trajectory to store in buffer size"""
+    """size of trajectory to store in buffer"""
 
     # DQN arguments
     buffer_size: int = 200
@@ -81,7 +81,7 @@ class Args:
     target_network_frequency: int = 25
     """the number of episodes it takes to update the target network"""
     batch_size: int = 32
-    """the batch size (in episodes) of sample from the reply memory"""
+    """the batch size (in episodes) of samples from the replay memory"""
     start_e: float = 1
     """the starting epsilon for exploration"""
     end_e: float = 0.05
@@ -100,9 +100,9 @@ class Args:
     num_agents: int = 1
     """the number of agents in the environment"""
     reward_shaping: str = ""
-    """Toggle learning rate annealing for policy and value networks"""
+    """reward shaping method (filled at runtime)"""
     device: str = "cpu"
-    "device"
+    """device to run the model on (cpu or cuda)"""
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)

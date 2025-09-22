@@ -101,7 +101,7 @@ class Args:
     num_agents: int = 1
     """the number of agents in the environment"""
     reward_shaping: str = ""
-    """Toggle learning rate annealing for policy and value networks"""
+    """reward shaping method (filled at runtime)"""
     
 def make_yaw_action(action):
     return {"yaw": action.cpu().numpy()}

@@ -43,7 +43,7 @@ class Args:
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
     cuda: bool = True
     """if toggled, cuda will be enabled by default"""
-    track: bool = True
+    track: bool = False
     """if toggled, this experiment will be tracked with Weights and Biases"""
     debug_log: bool = False
     """if toggled, will log all power outputs and yaws step by step"""
@@ -72,7 +72,7 @@ class Args:
 
     # recurrent learning arguments
     episode_length: int = 150
-    """side of an trajectory to store in buffer size"""
+    """size of trajectory to store in buffer"""
 
     # DQN arguments
     buffer_size: int = 5000
@@ -82,7 +82,7 @@ class Args:
     target_network_frequency: int = 25
     """the number of episodes it takes to update the target network"""
     batch_size: int = 32
-    """the batch size of sample from the reply memory"""
+    """the batch size of samples from the replay memory"""
     start_e: float = 1
     """the starting epsilon for exploration"""
     end_e: float = 0.05
@@ -102,9 +102,9 @@ class Args:
     num_agents: int = 1
     """the number of agents in the environment"""
     reward_shaping: str = ""
-    """Toggle learning rate annealing for policy and value networks"""
+    """reward shaping method (filled at runtime)"""
     device: str = "cpu"
-    "device"
+    """device to run the model on (cpu or cuda)"""
 
 
 class QNetwork(nn.Module):
@@ -347,7 +347,7 @@ if __name__ == "__main__":
         cumul_load += sum(loads)
         cumul_rewards += float(reward[0])
     
-        # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
+        # TRY NOT TO MODIFY: save data to replay buffer; handle `final_observation`
         # for idagent, agent_name in enumerate(agents_list):
         #     next_obs[buffer_id, idagent] = torch.tensor(partial_obs_extractor(env.observe(agent_name)), dtype=torch.float32, device=device)
         # # TRY NOT TO MODIFY: CRUCIAL step easy to overlook

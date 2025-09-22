@@ -43,7 +43,7 @@ class Args:
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
     cuda: bool = True
     """if toggled, cuda will be enabled by default"""
-    track: bool = True
+    track: bool = False
     """if toggled, this experiment will be tracked with Weights and Biases"""
     debug_log: bool = False
     """if toggled, will log all power outputs and yaws step by step"""
@@ -56,7 +56,7 @@ class Args:
     wind_data: str = "data/smarteole.csv"
     """Path to wind data for wind rose evaluation"""
     episode_length: int = 150
-    """side of an trajectory to store in buffer size"""
+    """size of a trajectory to store in buffer"""
     load_coef: float = 1
     """coefficient of the load penalty"""
 
@@ -114,7 +114,7 @@ class Args:
     num_agents: int = 1
     """the number of agents in the environment"""
     reward_shaping: str = ""
-    """Toggle learning rate annealing for policy and value networks"""
+    """reward shaping method (filled at runtime)"""
     device: str = "cpu"
     "device"
 

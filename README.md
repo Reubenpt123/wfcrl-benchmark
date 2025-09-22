@@ -13,7 +13,7 @@ Algorithms:
 | MAPPO          | `algos/baseline_mappo.py`  |  See [Yu et. al](https://arxiv.org/abs/2103.01955)     |
 | QMIX           | `algos/baseline_qmix.py`     | See [Rashid et. al](https://arxiv.org/abs/1803.11485)  |
 | IFAC           | `algos/ifac.py`     | Simple online actor critic with Fourier Basis     |
-| IQN           | `algos/idqn.py`     | Simple independent DQN    |
+| IDQN           | `algos/idqn.py`     | Simple independent DQN    |
 
 Install the dependencies:
 ```
@@ -26,7 +26,7 @@ Launch an IPPO training experiment on the `Dec_Ablaincourt_Floris` environment:
 python algos/baseline_ippo.py --seed 1 --env_id Dec_Ablaincourt_Floris --total_timesteps 100000
 ```
 
-Evaluate it on the on the `Dec_Ablaincourt_Fastfarm` environment:
+Evaluate it on the `Dec_Ablaincourt_Fastfarm` environment:
 
 ```
 mpiexec -n 1 python algos/eval.py --seed 0 --algo ippo --env_id Dec_Ablaincourt_Fastfarm --num_episodes 1 --pretrained_models path/to/run

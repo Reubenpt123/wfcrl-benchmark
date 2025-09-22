@@ -82,7 +82,7 @@ class Args:
     load_coef: float = 1
     """coefficient of the load penalty"""
     episode_length: int = 150
-    """side of an trajectory to store in buffer size"""
+    """size of trajectory to store in buffer"""
     wind_data: str = "data/smarteole.csv"
     """Path to wind data for wind rose evaluation"""
     env_id: str = "Dec_Turb3_Row1_Floris"

@@ -42,7 +42,7 @@ class Args:
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
     cuda: bool = True
     """if toggled, cuda will be enabled by default"""
-    track: bool = True
+    track: bool = False
     """if toggled, this experiment will be tracked with Weights and Biases"""
     debug_log: bool = False
     """if toggled, will log all power outputs and yaws step by step"""
@@ -81,7 +81,7 @@ class Args:
     target_network_frequency: int = 500
     """the timesteps it takes to update the target network"""
     batch_size: int = 128
-    """the batch size of sample from the reply memory"""
+    """the batch size of samples from the replay memory"""
     start_e: float = 1
     """the starting epsilon for exploration"""
     end_e: float = 0.05
@@ -103,9 +103,9 @@ class Args:
     num_agents: int = 1
     """the number of agents in the environment"""
     reward_shaping: str = ""
-    """Toggle learning rate annealing for policy and value networks"""
+    """reward shaping method (filled at runtime)"""
     device: str = "cpu"
-    "device"
+    """device to run the model on (cpu or cuda)"""
 
 class QNetwork(nn.Module):
     def __init__(self, observation_space, action_space, hidden_layers=(120,84)):
