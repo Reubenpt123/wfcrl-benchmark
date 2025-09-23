@@ -1,0 +1,14 @@
+ROSCO
+Running
+The center of wake plane
+Nodal
+legacy
+Onshore
+framework
+Delft
+heading
+Copyright
+collaboration
+low-resolution domain
+polar has constant
+------------------------------------------------------------------------------
