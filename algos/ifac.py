@@ -62,7 +62,7 @@ class Args:
     """the number of parallel game environments"""
 
     # DFAC arguments
-    pretrained_models: str = None
+    pretrained_models: str = ""
     """Path to pretrained models"""
     reward_tol: float = 0.00005
     """Tolerance threshold for reward function"""

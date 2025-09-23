@@ -29,8 +29,6 @@ from utils import (
     prepare_eval_windrose, 
 )
 
-
-
 @dataclass
 class Args:
     exp_name: str = os.path.basename(__file__)[: -len(".py")]
@@ -91,7 +89,7 @@ class Args:
     """fine tunes pretrained model"""
 
     # DFAC arguments
-    pretrained_models: str = None
+    pretrained_models: str = ""
     """Path to pretrained models"""
     policy: str = "base"
     """Type of policy"""
@@ -241,7 +239,7 @@ if __name__ == "__main__":
         for agent in agents
     ]
 
-    if args.pretrained_models is not None:
+    if args.pretrained_models:
         args.pretrained_models = Path(args.pretrained_models)
         assert args.pretrained_models.exists()
         for idagent, agent in enumerate(agents):

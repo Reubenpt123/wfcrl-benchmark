@@ -88,7 +88,7 @@ class Args:
     """the maximum norm for the gradient clipping"""
 
     # DFAC arguments
-    pretrained_models: str = None
+    pretrained_models: str = ""
     """Path to pretrained models"""
     policy: str = "base"
     """Type of policy"""
@@ -239,7 +239,7 @@ if __name__ == "__main__":
     ]
     critic_optimizer = optim.Adam(shared_critic.parameters(), lr=args.learning_rate, eps=1e-5)
 
-    if args.pretrained_models is not None:
+    if args.pretrained_models:
         args.pretrained_models = Path(args.pretrained_models)
         assert args.pretrained_models.exists()
         for idagent, agent in enumerate(agents):

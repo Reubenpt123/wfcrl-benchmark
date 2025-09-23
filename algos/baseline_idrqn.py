@@ -91,7 +91,7 @@ class Args:
     """the fraction of `total-timesteps` it takes from start-e to go end-e"""
     learning_starts: int = 200
     """episodes to start learning"""
-    pretrained_models: str = None
+    pretrained_models: str = ""
     """Path to pretrained models"""
     hidden_layer_nn: Union[bool, tuple[int]] = (64,) #(120, 84)
     """number of neurons in hidden layer"""
@@ -215,7 +215,7 @@ if __name__ == "__main__":
         for q_network in q_networks
     ]
 
-    if args.pretrained_models is not None:
+    if args.pretrained_models:
         args.pretrained_models = Path(args.pretrained_models)
         assert args.pretrained_models.exists()
         for idnetwork, q_network in enumerate(q_networks):

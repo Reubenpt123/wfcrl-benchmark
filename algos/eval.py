@@ -93,7 +93,7 @@ class Args:
     """ the name of the trained algorithm"""
 
     # model arguments
-    pretrained_models: str = "path/to/model" # 
+    pretrained_models: str = ""
     """Path to pretrained models"""
     output_folder: str = "eval"
     """output folder"""

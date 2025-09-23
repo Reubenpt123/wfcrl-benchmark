@@ -92,7 +92,7 @@ class Args:
     """timestep to start learning"""
     train_frequency: int = 10
     """the frequency of training"""
-    pretrained_models: str = None
+    pretrained_models: str = ""
     """Path to pretrained models"""
     hidden_layer_nn: Union[bool, tuple[int]] = (64,) #(120, 84)
     """number of neurons in hidden layer"""
@@ -207,7 +207,7 @@ if __name__ == "__main__":
         for q_network in q_networks
     ]
 
-    if args.pretrained_models is not None:
+    if args.pretrained_models:
         args.pretrained_models = Path(args.pretrained_models)
         assert args.pretrained_models.exists()
         for idnetwork, q_network in enumerate(q_networks):
