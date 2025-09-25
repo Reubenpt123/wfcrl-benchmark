@@ -51,8 +51,8 @@ class Args:
     wandb_entity: str = ""
     """the entity (team) of wandb's project"""
     save_model: bool = True
-    """whether to save model into the `runs/{run_name}` folder"""
-    wind_data: str = "data/smarteole.csv"
+    """whether to save model into the `~/code/wfcrl-benchmark/runs/{run_name}` folder"""
+    wind_data: str = os.path.expanduser("~/code/wfcrl-benchmark/data/smarteole.csv")
     """Path to wind data for wind rose evaluation"""
     load_coef: float = 1
     """coefficient of the load penalty"""
@@ -200,7 +200,7 @@ if __name__ == "__main__":
         import wandb
         load_dotenv()
         wandb.login(key=os.environ["WANDB_API_KEY"])
-        wandb.tensorboard.patch(root_logdir=f"runs/{run_name}", pytorch=False, tensorboard_x=False, save=False)
+        wandb.tensorboard.patch(root_logdir=os.path.expanduser(f"~/code/wfcrl-benchmark/runs/{run_name}"), pytorch=False, tensorboard_x=False, save=False)
         wandb.init(
             project=args.wandb_project_name,
             entity=args.wandb_entity,
@@ -210,9 +210,9 @@ if __name__ == "__main__":
             monitor_gym=True,
             save_code=True,
         )
-    writer = LocalSummaryWriter(f"runs/{run_name}")
+    writer = LocalSummaryWriter(os.path.expanduser(f"~/code/wfcrl-benchmark/runs/{run_name}"))
     writer.add_config(vars(args))
-    model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
+    model_path = os.path.expanduser(f"~/code/wfcrl-benchmark/runs/{run_name}/{args.exp_name}.cleanrl_model")
     # TRY NOT TO MODIFY
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -470,8 +470,8 @@ if __name__ == "__main__":
             torch.save(shared_critic.state_dict(), model_path+f"_critic")
             print(f"model saved to {model_path}")
         
-            # print("SPS:", int(global_step / (time.time() - start_time)))
-            writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+            # print("steps per second:", int(global_step / (time.time() - start_time)))
+            writer.add_scalar("charts/steps per second", int(global_step / (time.time() - start_time)), global_step)
         
     env.close()
     for idagent, agent in enumerate(agents):
@@ -483,8 +483,8 @@ if __name__ == "__main__":
 
     # Prepare plots
     fig = plot_env_history(env)
-    fig.savefig(f"runs/{run_name}/plot.png")
+    fig.savefig(os.path.expanduser(f"~/code/wfcrl-benchmark/runs/{run_name}/plot.png"))
 
     # Save the run name for batch scripts to find it
-    with open("/home/reuben/code/wfcrl-benchmark/scripts/most_recent_models/mappo_path.txt", "w") as file:
-        file.write(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}")
+    with open(os.path.expanduser("~/code/wfcrl-benchmark/scripts/most_recent_models/mappo_path.txt"), "w") as file:
+        file.write(os.path.expanduser(f"~/code/wfcrl-benchmark/runs/{run_name}"))
