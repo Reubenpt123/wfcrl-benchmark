@@ -85,11 +85,11 @@ class Args:
     """size of trajectory to store in buffer"""
     wind_data: str = "/home/reuben/code/wfcrl-benchmark/data/smarteole.csv"
     """Path to wind data for wind rose evaluation"""
-    env_id: str = "Dec_Turb3_Row1_Floris"
+    env_id: str = ""
     """the id of the environment"""
     num_episodes: int = 1
     """the number of iterations (computed in runtime)"""
-    algo: str = "ippo"
+    algo: str = ""
     """ the name of the trained algorithm"""
 
     # model arguments
@@ -99,7 +99,7 @@ class Args:
     """output folder"""
     policy: str = "base"
     """Type of policy"""
-    hidden_layer_nn: Union[bool, tuple[int]] = (64, 64)
+    hidden_layer_nn: Union[bool, tuple[int]] = (64,64)
     """number of neurons in hidden layer"""
     debug: bool = False
     """debug mode saves monitoring logs during training"""

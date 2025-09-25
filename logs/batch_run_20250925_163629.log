@@ -1,0 +1,8 @@
+Batch script started at 2025-09-25 16:36:29
+Log file: /home/reuben/code/wfcrl-benchmark/logs/batch_run_20250925_163629.log
+Script parameters: seed=1, total_timesteps=2000, episode_length=100
+
+==========================================
+[START] IDQN Training
+Time: 2025-09-25 16:36:29
+==========================================

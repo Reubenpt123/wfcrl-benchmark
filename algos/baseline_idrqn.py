@@ -93,7 +93,7 @@ class Args:
     """episodes to start learning"""
     pretrained_models: str = ""
     """Path to pretrained models"""
-    hidden_layer_nn: Union[bool, tuple[int]] = (64,) #(120, 84)
+    hidden_layer_nn: Union[bool, tuple[int]] = (64,64) #(120, 84)
     """number of neurons in hidden layer"""
     debug: bool = False
     """debug mode saves monitoring logs during training"""
@@ -108,21 +108,21 @@ class Args:
 
 
 class QNetwork(nn.Module):
-    def __init__(self, observation_space, action_space, hidden_dims):
+    def __init__(self, observation_space, action_space, hidden_layer_nn):
         super().__init__()
         action_dim = sum(action_space.nvec)
         self.observation_space = observation_space
-        self.hidden_dim = hidden_dims[0]
+        self.hidden_dim = hidden_layer_nn[0]
         self.register_buffer(
             "input_low", torch.tensor(np.r_[observation_space.low, np.zeros(action_dim)], dtype=torch.float32)
         )
         self.register_buffer(
             "input_high", torch.tensor(np.r_[observation_space.high, np.ones(action_dim)], dtype=torch.float32)
         )
-        self.l1 = nn.Linear(np.prod(observation_space.shape) + action_dim, hidden_dims[0])
+        self.l1 = nn.Linear(np.prod(observation_space.shape) + action_dim, hidden_layer_nn[0])
         self.rnn = nn.GRUCell(self.hidden_dim, self.hidden_dim)
         self.output_layers = nn.ModuleList([
-            nn.Linear(hidden_dims[-1], space.n)
+            nn.Linear(hidden_layer_nn[-1], space.n)
             for space in action_space
         ])
         self.reset_hidden_state()

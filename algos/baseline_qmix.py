@@ -177,21 +177,21 @@ class QMixer(nn.Module):
         # self.network[2].bias.data.copy_(b2.flatten())
 
 class QNetwork(nn.Module):
-    def __init__(self, observation_space, action_space, hidden_dims):
+    def __init__(self, observation_space, action_space, hidden_layer_nn):
         super().__init__()
         action_dim = sum(action_space.nvec)
         self.observation_space = observation_space
-        self.hidden_dim = hidden_dims[0]
+        self.hidden_dim = hidden_layer_nn[0]
         self.register_buffer(
             "input_low", torch.tensor(np.r_[observation_space.low, np.zeros(action_dim)], dtype=torch.float32)
         )
         self.register_buffer(
             "input_high", torch.tensor(np.r_[observation_space.high, np.ones(action_dim)], dtype=torch.float32)
         )
-        self.l1 = layer_init(nn.Linear(np.prod(observation_space.shape) + action_dim, hidden_dims[0]), std=1.0)
+        self.l1 = layer_init(nn.Linear(np.prod(observation_space.shape) + action_dim, hidden_layer_nn[0]), std=1.0)
         self.rnn = nn.GRUCell(self.hidden_dim, self.hidden_dim)
         self.output_layers = nn.ModuleList([
-            nn.Linear(hidden_dims[-1], act_n)
+            nn.Linear(hidden_layer_nn[-1], act_n)
             for act_n in action_space.nvec
         ])
         self.reset_hidden_state()

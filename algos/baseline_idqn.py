@@ -94,7 +94,7 @@ class Args:
     """the frequency of training"""
     pretrained_models: str = ""
     """Path to pretrained models"""
-    hidden_layer_nn: Union[bool, tuple[int]] = (64,) #(120, 84)
+    hidden_layer_nn: Union[bool, tuple[int]] = (64,)
     """number of neurons in hidden layer"""
     debug: bool = False
     """debug mode saves monitoring logs during training"""
@@ -108,10 +108,10 @@ class Args:
     """device to run the model on (cpu or cuda)"""
 
 class QNetwork(nn.Module):
-    def __init__(self, observation_space, action_space, hidden_layers=(120,84)):
+    def __init__(self, observation_space, action_space, hidden_layer_nn):
         super().__init__()
         self.observation_space = observation_space
-        input_layers = [np.prod(observation_space.shape)] + list(hidden_layers)
+        input_layers = [np.prod(observation_space.shape)] + list(hidden_layer_nn)
         self.register_buffer(
             "observation_low", torch.tensor(observation_space.low, dtype=torch.float32)
         )
