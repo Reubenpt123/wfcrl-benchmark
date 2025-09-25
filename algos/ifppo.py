@@ -412,7 +412,9 @@ if __name__ == "__main__":
     fig = plot_env_history(env)
     fig.savefig(f"runs/{run_name}/plot.png")
 
-    print("stop")
+    # Save the run name for batch scripts to find it
+    with open("/home/reuben/code/wfcrl-benchmark/scripts/most_recent_models/ifppo_path.txt", "w") as file:
+        file.write(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}")
 
 
 

@@ -527,3 +527,7 @@ if __name__ == "__main__":
     # Prepare plots
     fig = plot_env_history(env)
     fig.savefig(f"runs/{run_name}/plot.png")
+
+    # Save the run name for batch scripts to find it
+    with open("/home/reuben/code/wfcrl-benchmark/scripts/most_recent_models/qmix_path.txt", "w") as file:
+        file.write(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}")
