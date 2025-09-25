@@ -1,0 +1,13 @@
+{"time":"2025-09-25T11:58:11.394264278+01:00","level":"INFO","msg":"stream: starting","core version":"0.21.1"}
+{"time":"2025-09-25T11:58:11.654634851+01:00","level":"INFO","msg":"stream: created new stream","id":"qsi4862z"}
+{"time":"2025-09-25T11:58:11.654671245+01:00","level":"INFO","msg":"stream: started","id":"qsi4862z"}
+{"time":"2025-09-25T11:58:11.654768713+01:00","level":"INFO","msg":"writer: started","stream_id":"qsi4862z"}
+{"time":"2025-09-25T11:58:11.654780514+01:00","level":"INFO","msg":"handler: started","stream_id":"qsi4862z"}
+{"time":"2025-09-25T11:58:11.654837483+01:00","level":"INFO","msg":"sender: started","stream_id":"qsi4862z"}
+{"time":"2025-09-25T11:58:11.886203262+01:00","level":"ERROR","msg":"git repo not found","error":"repository does not exist"}
+{"time":"2025-09-25T11:58:11.939165449+01:00","level":"INFO","msg":"tensorboard: tracking new log directory","rootDir":{},"logDir":"LocalOrCloudPath(LocalPath=\"/home/reuben/code/wfcrl-benchmark/runs/Dec_Ablaincourt_Floris__baseline_idqn__constant_1__1758797890\")","namespace":""}
+{"time":"2025-09-25T12:28:50.295893075+01:00","level":"INFO","msg":"stream: closing","id":"qsi4862z"}
+{"time":"2025-09-25T12:28:51.388394192+01:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-09-25T12:28:51.593143656+01:00","level":"INFO","msg":"handler: closed","stream_id":"qsi4862z"}
+{"time":"2025-09-25T12:28:51.59331097+01:00","level":"INFO","msg":"sender: closed","stream_id":"qsi4862z"}
+{"time":"2025-09-25T12:28:51.593359691+01:00","level":"INFO","msg":"stream: closed","id":"qsi4862z"}

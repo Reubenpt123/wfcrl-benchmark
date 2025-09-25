@@ -1,0 +1,54 @@
+2025-09-25 11:51:35,619 INFO    MainThread:43466 [wandb_setup.py:_flush():80] Current SDK version is 0.21.1
+2025-09-25 11:51:35,619 INFO    MainThread:43466 [wandb_setup.py:_flush():80] Configure stats pid to 43466
+2025-09-25 11:51:35,619 INFO    MainThread:43466 [wandb_setup.py:_flush():80] Loading settings from /home/reuben/.config/wandb/settings
+2025-09-25 11:51:35,619 INFO    MainThread:43466 [wandb_setup.py:_flush():80] Loading settings from /home/reuben/code/wfcrl-benchmark/scripts/wandb/settings
+2025-09-25 11:51:35,619 INFO    MainThread:43466 [wandb_setup.py:_flush():80] Loading settings from environment variables
+2025-09-25 11:51:35,619 INFO    MainThread:43466 [wandb_init.py:setup_run_log_directory():703] Logging user logs to /home/reuben/code/wfcrl-benchmark/scripts/wandb/run-20250925_115135-f56f28hy/logs/debug.log
+2025-09-25 11:51:35,619 INFO    MainThread:43466 [wandb_init.py:setup_run_log_directory():704] Logging internal logs to /home/reuben/code/wfcrl-benchmark/scripts/wandb/run-20250925_115135-f56f28hy/logs/debug-internal.log
+2025-09-25 11:51:35,620 INFO    MainThread:43466 [wandb_init.py:init():830] calling init triggers
+2025-09-25 11:51:35,620 INFO    MainThread:43466 [wandb_init.py:init():835] wandb.init called with sweep_config: {}
+config: {'exp_name': 'baseline_idqn', 'scenario': 'constant', 'seed': 1, 'torch_deterministic': True, 'cuda': True, 'track': True, 'debug_log': False, 'wandb_project_name': 'benchmark-wfcrl-test', 'wandb_entity': '', 'save_model': True, 'freq_eval': 50, 'wind_data': '~/code/wfcrl-benchmark/data/smarteole.csv', 'load_coef': 1, 'env_id': 'Dec_Ablaincourt_Floris', 'total_timesteps': 150000, 'learning_rate': 0.00025, 'gamma': 0.99, 'num_envs': 1, 'buffer_size': 10000, 'tau': 1.0, 'target_network_frequency': 500, 'batch_size': 128, 'start_e': 1, 'end_e': 0.05, 'exploration_fraction': 0.5, 'learning_starts': 10000, 'train_frequency': 10, 'pretrained_models': '', 'hidden_layer_nn': (64,), 'debug': False, 'num_agents': 7, 'reward_shaping': '', 'device': device(type='cpu'), '_wandb': {'code_path': 'code/algos/baseline_idqn.py'}}
+2025-09-25 11:51:35,620 INFO    MainThread:43466 [wandb_init.py:init():871] starting backend
+2025-09-25 11:51:35,829 INFO    MainThread:43466 [wandb_init.py:init():874] sending inform_init request
+2025-09-25 11:51:35,834 INFO    MainThread:43466 [wandb_init.py:init():882] backend started and connected
+2025-09-25 11:51:35,837 INFO    MainThread:43466 [wandb_init.py:init():953] updated telemetry
+2025-09-25 11:51:35,841 INFO    MainThread:43466 [wandb_init.py:init():977] communicating run to backend with 90.0 second timeout
+2025-09-25 11:51:36,822 INFO    MainThread:43466 [wandb_init.py:init():1029] starting run threads in backend
+2025-09-25 11:51:36,875 INFO    MainThread:43466 [wandb_run.py:_console_start():2494] atexit reg
+2025-09-25 11:51:36,876 INFO    MainThread:43466 [wandb_run.py:_redirect():2342] redirect: wrap_raw
+2025-09-25 11:51:36,876 INFO    MainThread:43466 [wandb_run.py:_redirect():2411] Wrapping output streams.
+2025-09-25 11:51:36,876 INFO    MainThread:43466 [wandb_run.py:_redirect():2434] Redirects installed.
+2025-09-25 11:51:36,877 INFO    MainThread:43466 [wandb_init.py:init():1075] run started, returning control to user process
+2025-09-25 11:51:36,877 INFO    MainThread:43466 [wandb_run.py:_tensorboard_callback():1589] tensorboard callback: ~/code/wfcrl-benchmark/runs/Dec_Ablaincourt_Floris__baseline_idqn__constant_1__1758797494, False
+2025-09-25 11:51:51,884 INFO    MsgRouterThr:43466 [mailbox.py:close():129] [no run ID] Closing mailbox, abandoning 2 handles.
+2025-09-25 11:51:53,280 ERROR   MainThread:43466 [redirect.py:_on_write():664] [all runs] error in stdout callback
+Traceback (most recent call last):
+  File "/home/reuben/miniconda3/envs/wfcrl/lib/python3.11/site-packages/wandb/sdk/lib/redirect.py", line 662, in _on_write
+    cb(written_data)
+  File "/home/reuben/miniconda3/envs/wfcrl/lib/python3.11/site-packages/wandb/sdk/wandb_run.py", line 2415, in <lambda>
+    lambda data: self._console_raw_callback("stdout", data),
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/reuben/miniconda3/envs/wfcrl/lib/python3.11/site-packages/wandb/sdk/wandb_run.py", line 399, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/reuben/miniconda3/envs/wfcrl/lib/python3.11/site-packages/wandb/sdk/wandb_run.py", line 457, in wrapper_fn
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/reuben/miniconda3/envs/wfcrl/lib/python3.11/site-packages/wandb/sdk/wandb_run.py", line 1583, in _console_raw_callback
+    self._backend.interface.publish_output_raw(name, data)
+  File "/home/reuben/miniconda3/envs/wfcrl/lib/python3.11/site-packages/wandb/sdk/interface/interface.py", line 771, in publish_output_raw
+    self._publish_output_raw(o)
+  File "/home/reuben/miniconda3/envs/wfcrl/lib/python3.11/site-packages/wandb/sdk/interface/interface_shared.py", line 38, in _publish_output_raw
+    self._publish(rec)
+  File "/home/reuben/miniconda3/envs/wfcrl/lib/python3.11/site-packages/wandb/sdk/interface/interface_sock.py", line 39, in _publish
+    self._sock_client.send_record_publish(record)
+  File "/home/reuben/miniconda3/envs/wfcrl/lib/python3.11/site-packages/wandb/sdk/lib/sock_client.py", line 166, in send_record_publish
+    self.send_server_request(server_req)
+  File "/home/reuben/miniconda3/envs/wfcrl/lib/python3.11/site-packages/wandb/sdk/lib/sock_client.py", line 146, in send_server_request
+    self._send_message(msg)
+  File "/home/reuben/miniconda3/envs/wfcrl/lib/python3.11/site-packages/wandb/sdk/lib/sock_client.py", line 143, in _send_message
+    self._sendall_with_error_handle(header + data)
+  File "/home/reuben/miniconda3/envs/wfcrl/lib/python3.11/site-packages/wandb/sdk/lib/sock_client.py", line 122, in _sendall_with_error_handle
+    sent = self._sock.send(data)
+           ^^^^^^^^^^^^^^^^^^^^^
+BrokenPipeError: [Errno 32] Broken pipe

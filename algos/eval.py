@@ -83,7 +83,7 @@ class Args:
     """coefficient of the load penalty"""
     episode_length: int = 150
     """size of trajectory to store in buffer"""
-    wind_data: str = "data/smarteole.csv"
+    wind_data: str = "/home/reuben/code/wfcrl-benchmark/data/smarteole.csv"
     """Path to wind data for wind rose evaluation"""
     env_id: str = "Dec_Turb3_Row1_Floris"
     """the id of the environment"""
