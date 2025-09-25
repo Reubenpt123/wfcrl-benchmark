@@ -8,3 +8,5 @@ algos/private/*
 layouts/*
 *.pyc
 Notes
+wandb/*
+logs/*
