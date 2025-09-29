@@ -3,10 +3,11 @@ runs/*
 simulators/*
 __pycache__/*
 wandb/*
-.vscode/*
 algos/private/*
 layouts/*
 *.pyc
 Notes
 wandb/*
 logs/*
+*.vscode
+scripts/most_recent_models/
