@@ -99,7 +99,7 @@ class Args:
     """output folder"""
     policy: str = "base"
     """Type of policy"""
-    hidden_layer_nn: Union[bool, tuple[int]] = (64,64)
+    hidden_layer_nn: Union[bool, tuple[int, ...]] = (64,64)
     """number of neurons in hidden layer"""
     debug: bool = False
     """debug mode saves monitoring logs during training"""
