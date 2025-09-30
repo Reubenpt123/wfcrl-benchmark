@@ -30,7 +30,7 @@ class Args:
     """seed of the experiment"""
     torch_deterministic: bool = True
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
-    cuda: bool = True
+    cuda: bool = False
     """if toggled, cuda will be enabled by default"""
     track: bool = False
     """if toggled, this experiment will be tracked with Weights and Biases"""
@@ -223,7 +223,7 @@ if __name__ == "__main__":
     global_obs_space = env.state_space
     action_space = env.action_space(env.possible_agents[0])["yaw"]
     partial_obs_extractor = DfacSPaceExtractor(local_obs_space, global_obs_space)
-    partial_obs_space = partial_obs_extractor.observation_space
+    partial_obs_space = partial_obs_extractor.space
     features_extractor_params = {
         "order":args.fourier_order,
         "hyper": args.fourier_hyper,

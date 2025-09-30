@@ -68,7 +68,7 @@ class Args:
     """coefficient of the value function"""
     max_grad_norm: float = 0.5
     """the maximum norm for the gradient clipping"""
-    target_kl: float = None
+    target_kl: float = 0
     """the target KL divergence threshold"""
     num_envs: int = 1
     """the number of parallel game environments"""
@@ -194,7 +194,7 @@ if __name__ == "__main__":
     args.num_iterations = args.total_timesteps // args.batch_size
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
     if args.track:
-        os.environ["HTTPS_PROXY"] = "http://irsrvpxw1-std:8082"
+        # os.environ["HTTPS_PROXY"] = "http://irsrvpxw1-std:8082"
         import wandb
         wandb.init(
             project=args.wandb_project_name,
@@ -222,7 +222,7 @@ if __name__ == "__main__":
     global_obs_space = env.state_space
     action_space = env.action_space(env.possible_agents[0])["yaw"]
     partial_obs_extractor = DfacSPaceExtractor(local_obs_space, global_obs_space)
-    partial_obs_space = partial_obs_extractor.observation_space
+    partial_obs_space = partial_obs_extractor.space
     features_extractor_params = {
         "order":args.fourier_order,
         "hyper": args.fourier_hyper,
@@ -378,7 +378,7 @@ if __name__ == "__main__":
                     nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
                     optimizers[idagent].step()
 
-                if args.target_kl is not None and approx_kl > args.target_kl:
+                if args.target_kl and approx_kl > args.target_kl:
                     break
 
             y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
