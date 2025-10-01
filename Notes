@@ -1,0 +1,10 @@
+1. Works best running the scripts from the wfcrl-benchmark folder.
+2. Need to make sure that the sizes of neural networks used for training matches that in the eval file.
+3. Need a minimum number of timesteps≈3000 for IPPO/MAPPO to save properly. (Otherwise get "ValueError: Shape of passed values is (7, 1), indices imply (7, 7)") - Useful for doing short, debugging, runs.
+4. At 10,000 iterations, episode length 100:
+                        IDQN, IDRQN, and QMIX are really bad.
+                        IPPO, and MAPPO are bad but better
+                        IFAC and IFPPO are suprisingly good (they take longer to run) but they do not work in an episodic way. By ≈5000 iterations they both look good. IFPPO has maybe 
+                        a slightly higher yield but initially more unstable yaw outputs. They both appear to produce similar optimal yaws.
+5. Trying 10,000 iterations with episode length 200:
+

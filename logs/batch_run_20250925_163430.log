@@ -1,8 +1,0 @@
-Batch script started at 2025-09-25 16:34:30
-Log file: /home/reuben/code/wfcrl-benchmark/logs/batch_run_20250925_163430.log
-Script parameters: seed=1, total_timesteps=2000, episode_length=100
-
-==========================================
-[START] IDQN Evaluation on FAST.Farm
-Time: 2025-09-25 16:34:30
-==========================================
