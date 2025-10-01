@@ -21,16 +21,16 @@ set -x
 
 #fastfarm /home/mep23rt/code/wfcrl-benchmark/__simul__/fastfarm/FastFarm__1102s__30T_1741260950.201606/FarmInputs/Case.fstf
 
-#python ~/code/wfcrl-benchmark/algos/baseline_ippo.py --seed $seed --env_id $env_id_floris --total_timesteps $total_timesteps --$track --$save_model --wandb_project_name $wandb_project_name
+#python ~/code/wfcrl-benchmark/algorithms/baseline_ippo.py --seed $seed --env_id $env_id_floris --total_timesteps $total_timesteps --$track --$save_model --wandb_project_name $wandb_project_name
 #read -r ippo_model < ~/code/wfcrl-benchmark/scripts/ippo_path.txt
-#python algos/eval.py --seed 0 --env_id $env_id_fastfarm --pretrained_models $ippo_model --$track --wandb_project_name $wandb_project_name --episode_length $episode_length --scenario $scenario
+#python algorithms/eval.py --seed 0 --env_id $env_id_fastfarm --pretrained_models $ippo_model --$track --wandb_project_name $wandb_project_name --episode_length $episode_length --scenario $scenario
 
-#python ~/code/wfcrl-benchmark/algos/baseline_mappo.py --seed $seed --env_id $env_id_floris --total_timesteps $total_timesteps --$track --$save_model --wandb_project_name $wandb_project_name
+#python ~/code/wfcrl-benchmark/algorithms/baseline_mappo.py --seed $seed --env_id $env_id_floris --total_timesteps $total_timesteps --$track --$save_model --wandb_project_name $wandb_project_name
 read -r mappo_model < ~/code/wfcrl-benchmark/scripts/mappo_path.txt
-python algos/eval.py --seed 0 --env_id $env_id_fastfarm --pretrained_models $mappo_model --$track --wandb_project_name $wandb_project_name --episode_length $episode_length --scenario $scenario
+python algorithms/eval.py --seed 0 --env_id $env_id_fastfarm --pretrained_models $mappo_model --$track --wandb_project_name $wandb_project_name --episode_length $episode_length --scenario $scenario
 
-#python ~/code/wfcrl-benchmark/algos/baseline_qmix.py --seed $seed --env_id $env_id --total_timesteps $total_timesteps --$track --$save_model --wandb_project_name $wandb_project_name
+#python ~/code/wfcrl-benchmark/algorithms/baseline_qmix.py --seed $seed --env_id $env_id --total_timesteps $total_timesteps --$track --$save_model --wandb_project_name $wandb_project_name
 #read -r qmix_model < ~/code/wfcrl-benchmark/scripts/qmix_path.txt
-#python algos/eval.py --seed 0 --env_id Dec_Ablaincourt_Fastfarm --pretrained_models $qmix_model --$track --wandb_project_name $wandb_project_name --episode_length $episode_length --scenario $scenario
+#python algorithms/eval.py --seed 0 --env_id Dec_Ablaincourt_Fastfarm --pretrained_models $qmix_model --$track --wandb_project_name $wandb_project_name --episode_length $episode_length --scenario $scenario
 
 sudo shutdown -h +15
