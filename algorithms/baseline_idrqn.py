@@ -412,10 +412,28 @@ if __name__ == "__main__":
     print(f"model saved to {model_path}")
     writer.close()
 
+    # Run a complete episode for plotting
+    print("Running final evaluation episode for plotting...")
+    eval_env = envs.make(
+        args.env_id,
+        controls=controls, 
+        max_num_steps=args.episode_length,
+        continuous_control=False,
+        load_coef=args.load_coef
+    )
+    
+    if windrose_eval:
+        eval_env.reset(args.seed+global_step)
+    else:
+        eval_env.reset(options={"wind_speed": 8, "wind_direction": 270})
+    
+    # Run a complete episode using the existing evaluate function
+    evaluate(eval_env, q_networks)
 
-    # Prepare plots
-    fig = plot_env_history(env)
+    # Prepare plots from the complete evaluation episode
+    fig = plot_env_history(eval_env)
     fig.savefig(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}/plot.png")
+    eval_env.close()
 
     # Save the run name for batch scripts to find it
     with open("/home/reuben/code/wfcrl-benchmark/scripts/most_recent_models/idrqn_path.txt", "w") as file:

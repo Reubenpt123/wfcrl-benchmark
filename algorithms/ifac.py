@@ -356,10 +356,3 @@ if __name__ == "__main__":
     # Save the run name for batch scripts to find it
     with open("/home/reuben/code/wfcrl-benchmark/scripts/most_recent_models/ifac_path.txt", "w") as file:
         file.write(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}")
-
-
-
-
-
-
-
