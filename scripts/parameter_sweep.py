@@ -24,9 +24,9 @@ class ParameterSweep:
         self.runs_dir = self.base_dir / "runs"
         self.logs_dir = self.base_dir / "logs"
         
-        # Create sweep results directory
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.sweep_dir = self.base_dir / "parameter_sweeps" / f"sweep_{timestamp}"
+        # Create sweep results directory with readable name
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        self.sweep_dir = self.base_dir / "parameter_sweeps" / f"parameter_sweep_{timestamp}"
         self.sweep_dir.mkdir(parents=True, exist_ok=True)
         
         print(f"Parameter sweep results will be saved to: {self.sweep_dir}")
@@ -89,12 +89,13 @@ class ParameterSweep:
             # Make it executable
             os.chmod(temp_script, 0o755)
             
-            # Run the script
+            # Run the script with real-time output
             start_time = time.time()
+            print("Starting batch script execution...")
             result = subprocess.run(
                 ["bash", str(temp_script)],
                 cwd=self.base_dir,
-                capture_output=True,
+                capture_output=False,  # Show output in real-time
                 text=True,
                 timeout=7200  # 2 hour timeout
             )
@@ -105,10 +106,9 @@ class ParameterSweep:
             log_message = f"Run completed in {duration:.1f}s. Return code: {result.returncode}"
             
             if not success:
-                log_message += f"\nSTDERR: {result.stderr[:500]}..."
-                print(f"❌ Script failed: {log_message}")
+                print(f"Script failed with return code: {result.returncode}")
             else:
-                print(f"✅ Script completed successfully in {duration:.1f}s")
+                print(f"Script completed successfully in {duration:.1f}s")
             
             return success, log_message
             
@@ -126,11 +126,13 @@ class ParameterSweep:
         """
         Move the most recent run results to organized directories
         """
-        # Create parameter-specific directory
-        param_str = f"ep{episode_length}_steps{total_timesteps}"
+        # Create parameter-specific directory with readable names
+        param_str = f"episode_length_{episode_length}_total_timesteps_{total_timesteps}"
         if additional_params:
             for key, value in additional_params.items():
-                param_str += f"_{key}{value}"
+                # Convert parameter names to readable format
+                readable_key = key.replace('_', ' ').title().replace(' ', '_')
+                param_str += f"_{readable_key}_{value}"
         
         param_dir = self.sweep_dir / param_str
         param_dir.mkdir(exist_ok=True)
@@ -159,7 +161,7 @@ class ParameterSweep:
                 runs_moved += 1
                 print(f"  Moved run: {run_dir.name}")
             except Exception as e:
-                print(f"  ⚠️  Failed to move run {run_dir.name}: {e}")
+                print(f"  WARNING: Failed to move run {run_dir.name}: {e}")
         
         # Move logs
         logs_moved = 0
@@ -171,7 +173,7 @@ class ParameterSweep:
                 logs_moved += 1
                 print(f"  Moved log: {log_file.name}")
             except Exception as e:
-                print(f"  ⚠️  Failed to move log {log_file.name}: {e}")
+                print(f"  WARNING: Failed to move log {log_file.name}: {e}")
         
         # Create a summary file
         summary_file = param_dir / "run_summary.txt"
@@ -188,8 +190,8 @@ class ParameterSweep:
             f.write(f"Logs moved: {logs_moved}\n")
             f.write(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         
-        print(f"  📁 Results organized in: {param_dir}")
-        print(f"  📊 Summary saved to: {summary_file}")
+        print(f"  Results organized in: {param_dir}")
+        print(f"  Summary saved to: {summary_file}")
     
     def run_sweep(self, episode_lengths: List[int], total_timesteps_list: List[int],
                   additional_params_list: List[dict] = None):
@@ -200,7 +202,7 @@ class ParameterSweep:
             additional_params_list = [{}]
         
         total_runs = len(episode_lengths) * len(total_timesteps_list) * len(additional_params_list)
-        print(f"\n🚀 Starting parameter sweep with {total_runs} total runs")
+        print(f"\nStarting parameter sweep with {total_runs} total runs")
         
         # Create overall summary
         overall_summary = self.sweep_dir / "sweep_summary.txt"
@@ -212,7 +214,7 @@ class ParameterSweep:
             for total_timesteps in total_timesteps_list:
                 for additional_params in additional_params_list:
                     run_count += 1
-                    print(f"\n📊 Run {run_count}/{total_runs}")
+                    print(f"\nRun {run_count}/{total_runs}")
                     
                     # Run the batch script
                     success, log_msg = self.run_batch_script(
@@ -227,18 +229,19 @@ class ParameterSweep:
                     
                     # Update overall summary
                     with open(overall_summary, 'a') as f:
-                        f.write(f"Run {run_count}: ep{episode_length}_steps{total_timesteps}")
+                        f.write(f"Run {run_count}: Episode_Length_{episode_length}_Total_Timesteps_{total_timesteps}")
                         if additional_params:
                             for key, value in additional_params.items():
-                                f.write(f"_{key}{value}")
+                                readable_key = key.replace('_', ' ').title().replace(' ', '_')
+                                f.write(f"_{readable_key}_{value}")
                         f.write(f" - {'SUCCESS' if success else 'FAILED'}\n")
                         if not success:
                             f.write(f"  Error: {log_msg}\n")
         
         # Final summary
-        print(f"\n🎉 Parameter sweep completed!")
-        print(f"📈 Successful runs: {successful_runs}/{total_runs}")
-        print(f"📁 Results saved to: {self.sweep_dir}")
+        print(f"\nParameter sweep completed!")
+        print(f"Successful runs: {successful_runs}/{total_runs}")
+        print(f"Results saved to: {self.sweep_dir}")
         
         with open(overall_summary, 'a') as f:
             f.write(f"\nSweep Summary:\n")
@@ -254,22 +257,22 @@ class ParameterSweep:
         Args:
             delay_minutes: Minutes to wait before shutdown
         """
-        print(f"\n💻 System will shutdown in {delay_minutes} minutes...")
-        print(f"⚠️  Save any unsaved work now!")
+        print(f"\nSystem will shutdown in {delay_minutes} minutes...")
+        print(f"WARNING: Save any unsaved work now!")
         
         # Give user time to cancel if needed
         for i in range(delay_minutes * 60, 0, -10):
             minutes = i // 60
             seconds = i % 60
-            print(f"⏰ Shutdown in {minutes:02d}:{seconds:02d}... (Ctrl+C to cancel)")
+            print(f"Shutdown in {minutes:02d}:{seconds:02d}... (Ctrl+C to cancel)")
             time.sleep(10)
         
-        print("🔌 Shutting down system now...")
+        print("Shutting down system now...")
         try:
             subprocess.run(["sudo", "shutdown", "-h", "now"], check=True)
         except subprocess.CalledProcessError as e:
-            print(f"❌ Failed to shutdown: {e}")
-            print("💡 You may need to run: sudo shutdown -h now")
+            print(f"Failed to shutdown: {e}")
+            print("You may need to run: sudo shutdown -h now")
 
 
 def main():

@@ -27,7 +27,13 @@ set -x
 
 #python ~/code/wfcrl-benchmark/algorithms/baseline_mappo.py --seed $seed --env_id $env_id_floris --total_timesteps $total_timesteps --$track --$save_model --wandb_project_name $wandb_project_name
 read -r mappo_model < ~/code/wfcrl-benchmark/scripts/mappo_path.txt
-python algorithms/eval.py --seed 0 --env_id $env_id_fastfarm --pretrained_models $mappo_model --$track --wandb_project_name $wandb_project_name --episode_length $episode_length --scenario $scenario
+#python algorithms/evaluate.py --seed 0 --env_id $env_id_fastfarm --pretrained_models $ippo_model --$track --wandb_project_name $wandb_project_name --episode_length $episode_length --scenario $scenario
+
+# MAPPO evaluation
+python algorithms/evaluate.py --seed 0 --env_id $env_id_fastfarm --pretrained_models $mappo_model --$track --wandb_project_name $wandb_project_name --episode_length $episode_length --scenario $scenario
+
+# QMIX evaluation
+#python algorithms/evaluate.py --seed 0 --env_id Dec_Ablaincourt_Fastfarm --pretrained_models $qmix_model --$track --wandb_project_name $wandb_project_name --episode_length $episode_length --scenario $scenario
 
 #python ~/code/wfcrl-benchmark/algorithms/baseline_qmix.py --seed $seed --env_id $env_id --total_timesteps $total_timesteps --$track --$save_model --wandb_project_name $wandb_project_name
 #read -r qmix_model < ~/code/wfcrl-benchmark/scripts/qmix_path.txt

@@ -58,8 +58,8 @@ python algorithms/baseline_ippo.py --seed 1 --env_id Dec_Ablaincourt_Floris --to
 Evaluate a trained model on the `Dec_Ablaincourt_Fastfarm` environment:
 
 ```bash
-mpiexec -n 1 python algorithms/eval.py --seed 0 --algo ippo --env_id Dec_Ablaincourt_Fastfarm --num_episodes 1 --pretrained_models path/to/run
-```
+# Cross-simulator evaluation  
+mpiexec -n 1 python algorithms/evaluate.py --seed 0 --algo ippo --env_id Dec_Ablaincourt_Fastfarm --num_episodes 1 --pretrained_models path/to/run
 
 ### Batch Training
 

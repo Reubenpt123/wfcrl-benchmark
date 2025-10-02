@@ -16,7 +16,7 @@ wfcrl-benchmark/
 │   ├── baseline_idrqn.py   # Independent Deep Recurrent Q-Network
 │   ├── ifac.py            # Independent Actor-Critic with Fourier basis
 │   ├── ifppo.py           # Independent PPO with Fourier features
-│   ├── eval.py            # Unified evaluation framework
+│   ├── evaluate.py        # Unified evaluation framework
 │   ├── extractors.py      # Observation and feature extractors
 │   └── utils.py           # Utilities and helper functions
 ├── data/
@@ -190,7 +190,7 @@ for agent_id, agent in enumerate(agents):
 
 ### 6. Evaluation Framework
 
-The `eval.py` module provides unified evaluation across all algorithms:
+The `evaluate.py` module provides unified evaluation across all algorithms:
 
 #### Evaluation Modes
 
@@ -345,7 +345,7 @@ python-dotenv
 #### Adding New Algorithms
 1. Create new file in `algos/` following naming convention
 2. Implement `Agent` class with required methods
-3. Add algorithm mapping in `eval.py`
+3. Add algorithm mapping in `evaluate.py`
 4. Define hyperparameter dataclass
 5. Implement training loop following established patterns
 

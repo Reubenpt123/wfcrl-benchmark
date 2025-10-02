@@ -7,7 +7,7 @@
 - **Neural Network Consistency**: Ensure neural network architectures match between training and evaluation files
 - **Minimum Training Requirements**: IPPO/MAPPO require ≈3000 timesteps minimum to save properly
   - Below this threshold: `ValueError: Shape of passed values is (7, 1), indices imply (7, 7)`
-  - This can be useful constraint for debugging runs
+  - This can be useful for debugging runs
 
 ## Experimental Results
 
@@ -15,7 +15,7 @@
 
 #### Poor Performers
 - **IDQN**: Really bad performance
-- **IDRQN**: Really bad performance  
+- **IDRQN**: Really bad performance
 - **QMIX**: Really bad performance
 
 #### Moderate Performers

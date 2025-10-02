@@ -25,21 +25,6 @@ log_time() {
     echo "$message" >> "$LOG_FILE"
 }
 
-train_algorithm() {
-    local algo="$1" script="$2" extra_args="$3"
-    
-    log_time "$algo Training" "START"
-    python "$BASE_DIR/algorithms/$script" \
-        --seed $seed --env_id $env_id --total_timesteps $total_timesteps \
-        --$track --$save_model --wandb_project_name $wandb_project_name \
-        $extra_args
-    log_time "$algo Training" "END"
-    
-    # Log model path
-    local model_path_file="$BASE_DIR/scripts/most_recent_models/${algo,,}_path.txt"
-    read -r model_path < "$model_path_file"
-    echo "$algo model saved to: $model_path" | tee -a "$LOG_FILE"
-}
 
 log_summary() {
     echo -e "\n===========================================" | tee -a "$LOG_FILE"
@@ -53,7 +38,7 @@ log_summary() {
 }
 
 seed=1
-total_timesteps=3000
+total_timesteps=10000
 track=no-track
 save_model=save_model
 env_id=Dec_Ablaincourt_Floris
@@ -83,41 +68,76 @@ echo "Save models: $save_model" | tee -a "$LOG_FILE"
 echo "Wandb project: $wandb_project_name" | tee -a "$LOG_FILE"
 
 # Train all algorithms
-train_algorithm "IDQN" "baseline_idqn.py" "--episode_length $episode_length"
-# Run the eval FAST.Farm command
-#log_time "IDQN Evaluation on FAST.Farm" "START"
-#python /home/reuben/code/wfcrl-benchmark/algorithms/eval.py --seed 0 --env_id Dec_Ablaincourt_Fastfarm --pretrained_models $idqn_model --episode_length $episode_length --scenario $scenario --algo idqn --hidden_layer_nn 64
-#log_time "IDQN Evaluation on FAST.Farm" "END"
 
-train_algorithm "IDRQN" "baseline_idrqn.py" "--episode_length $episode_length"
-#log_time "IDRQN Evaluation on FAST.Farm" "START"
-#python /home/reuben/code/wfcrl-benchmark/algorithms/eval.py --seed 0 --env_id Dec_Ablaincourt_Fastfarm --pretrained_models $idrqn_model --episode_length $episode_length --scenario $scenario --algo idrqn --hidden_layer_nn 64 64
-#log_time "IDRQN Evaluation on FAST.Farm" "END"
+# Train IDQN
+log_time "IDQN Training" "START"
+python "$BASE_DIR/algorithms/baseline_idqn.py" --seed $seed --env_id $env_id --total_timesteps $total_timesteps \
+       --$track --$save_model --wandb_project_name $wandb_project_name --episode_length $episode_length
+log_time "IDQN Training" "END"
+# Log IDQN model path
+read -r idqn_model_path < "$BASE_DIR/scripts/most_recent_models/idqn_path.txt"
+echo "IDQN model saved to: $idqn_model_path" | tee -a "$LOG_FILE"
 
-train_algorithm "IPPO" "baseline_ippo.py" "--episode_length $episode_length"
-#log_time "IPPO Evaluation on FAST.Farm" "START"
-#python /home/reuben/code/wfcrl-benchmark/algorithms/eval.py --seed 0 --env_id Dec_Ablaincourt_Fastfarm --pretrained_models $ippo_model --episode_length $episode_length --scenario $scenario --algo ippo --hidden_layer_nn 64 64
-#log_time "IPPO Evaluation on FAST.Farm" "END"
 
-train_algorithm "MAPPO" "baseline_mappo.py" "--episode_length $episode_length"
-#log_time "MAPPO Evaluation on FAST.Farm" "START"
-#python /home/reuben/code/wfcrl-benchmark/algorithms/eval.py --seed 0 --env_id Dec_Ablaincourt_Fastfarm --pretrained_models $mappo_model --episode_length $episode_length --scenario $scenario --algo mappo --hidden_layer_nn 64 64
-#log_time "MAPPO Evaluation on FAST.Farm" "END"
+# Train IDRQN
+log_time "IDRQN Training" "START"
+python "$BASE_DIR/algorithms/baseline_idrqn.py" --seed $seed --env_id $env_id --total_timesteps $total_timesteps \
+       --$track --$save_model --wandb_project_name $wandb_project_name --episode_length $episode_length
+log_time "IDRQN Training" "END"
+# Log IDRQN model path
+read -r idrqn_model_path < "$BASE_DIR/scripts/most_recent_models/idrqn_path.txt"
+echo "IDRQN model saved to: $idrqn_model_path" | tee -a "$LOG_FILE"
 
-train_algorithm "QMIX" "baseline_qmix.py" "--episode_length $episode_length"
-#log_time "QMIX Evaluation on FAST.Farm" "START"
-#python /home/reuben/code/wfcrl-benchmark/algorithms/eval.py --seed 0 --env_id Dec_Ablaincourt_Fastfarm --pretrained_models $qmix_model --episode_length $episode_length --scenario $scenario --algo qmix --hidden_layer_nn 64
-#log_time "QMIX Evaluation on FAST.Farm" "END"
 
-train_algorithm "IFAC" "ifac.py" ""
-#log_time "IFAC Evaluation on FAST.Farm" "START"
-#python /home/reuben/code/wfcrl-benchmark/algorithms/eval.py --seed 0 --env_id Dec_Ablaincourt_Fastfarm --pretrained_models $ifac_model --episode_length $episode_length --scenario $scenario --algo ifac --hidden_layer_nn False
-#log_time "IFAC Evaluation on FAST.Farm" "END"
+# Train IPPO
+log_time "IPPO Training" "START"
+python "$BASE_DIR/algorithms/baseline_ippo.py" --seed $seed --env_id $env_id --total_timesteps $total_timesteps \
+       --$track --$save_model --wandb_project_name $wandb_project_name --episode_length $episode_length
+log_time "IPPO Training" "END"
+# Log IPPO model path
+read -r ippo_model_path < "$BASE_DIR/scripts/most_recent_models/ippo_path.txt"
+echo "IPPO model saved to: $ippo_model_path" | tee -a "$LOG_FILE"
 
-train_algorithm "IFPPO" "ifppo.py" ""
-#log_time "IFPPO Evaluation on FAST.Farm" "START"
-#python /home/reuben/code/wfcrl-benchmark/algorithms/eval.py --seed 0 --env_id Dec_Ablaincourt_Fastfarm --pretrained_models $ifppo_model --episode_length $episode_length --scenario $scenario --algo ifppo --hidden_layer_nn False
-#log_time "IFPPO Evaluation on FAST.Farm" "END"
+
+# Train MAPPO
+log_time "MAPPO Training" "START"
+python "$BASE_DIR/algorithms/baseline_mappo.py" --seed $seed --env_id $env_id --total_timesteps $total_timesteps \
+       --$track --$save_model --wandb_project_name $wandb_project_name --episode_length $episode_length
+log_time "MAPPO Training" "END"
+# Log MAPPO model path
+read -r mappo_model_path < "$BASE_DIR/scripts/most_recent_models/mappo_path.txt"
+echo "MAPPO model saved to: $mappo_model_path" | tee -a "$LOG_FILE"
+
+
+# Train QMIX
+log_time "QMIX Training" "START"
+python "$BASE_DIR/algorithms/baseline_qmix.py" --seed $seed --env_id $env_id --total_timesteps $total_timesteps \
+       --$track --$save_model --wandb_project_name $wandb_project_name --episode_length $episode_length
+log_time "QMIX Training" "END"
+# Log QMIX model path
+read -r qmix_model_path < "$BASE_DIR/scripts/most_recent_models/qmix_path.txt"
+echo "QMIX model saved to: $qmix_model_path" | tee -a "$LOG_FILE"
+
+
+# Train IFAC
+log_time "IFAC Training" "START"
+python "$BASE_DIR/algorithms/ifac.py" --seed $seed --env_id $env_id --total_timesteps $total_timesteps \
+       --$track --$save_model --wandb_project_name $wandb_project_name
+log_time "IFAC Training" "END"
+# Log IFAC model path
+read -r ifac_model_path < "$BASE_DIR/scripts/most_recent_models/ifac_path.txt"
+echo "IFAC model saved to: $ifac_model_path" | tee -a "$LOG_FILE"
+
+
+# Train IFPPO
+log_time "IFPPO Training" "START"
+python "$BASE_DIR/algorithms/ifppo.py" --seed $seed --env_id $env_id --total_timesteps $total_timesteps \
+       --$track --$save_model --wandb_project_name $wandb_project_name
+log_time "IFPPO Training" "END"
+# Log IFPPO model path
+read -r ifppo_model_path < "$BASE_DIR/scripts/most_recent_models/ifppo_path.txt"
+echo "IFPPO model saved to: $ifppo_model_path" | tee -a "$LOG_FILE"
+
 
 # Training run summary
 log_summary
