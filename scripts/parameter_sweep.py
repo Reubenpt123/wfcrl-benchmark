@@ -3,7 +3,7 @@
 Parameter Sweep Script for WFCRL Benchmark
 
 This script runs the ablaincourt batch script with different combinations of
-episode_length and total_timesteps parameters, then organizes the results
+episode_length and total_timesteps parameters, then organises the results
 into structured directories.
 """
 
@@ -11,9 +11,10 @@ import os
 import subprocess
 import shutil
 import time
+import json
 from pathlib import Path
 from datetime import datetime
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 import argparse
 
 
@@ -23,13 +24,131 @@ class ParameterSweep:
         self.script_path = self.base_dir / "scripts" / "ablaincourt_batch.sh"
         self.runs_dir = self.base_dir / "runs"
         self.logs_dir = self.base_dir / "logs"
+        self.most_recent_models_dir = self.base_dir / "scripts" / "most_recent_models"
         
         # Create sweep results directory with readable name
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        timestamp = datetime.now().strftime("%d-%m-%y_%H-%M-%S")
         self.sweep_dir = self.base_dir / "parameter_sweeps" / f"parameter_sweep_{timestamp}"
         self.sweep_dir.mkdir(parents=True, exist_ok=True)
         
+        # Initialise run tracking log
+        self.run_log_file = self.sweep_dir / "run_locations.json"
+        self.run_log: Dict[str, List[str]] = {}
+        
         print(f"Parameter sweep results will be saved to: {self.sweep_dir}")
+    
+    def log_run_locations(self, run_key: str):
+        """
+        Read run locations from most_recent_models directory and log them.
+        Creates a snapshot of the path files to preserve them before they get overwritten.
+        
+        Args:
+            run_key: Identifier for this set of runs
+        """
+        run_paths = []
+        
+        # Create a snapshot directory for this run's path files
+        snapshot_dir = self.sweep_dir / "path_snapshots" / run_key
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Read all algorithm path files and create snapshots
+        for path_file in self.most_recent_models_dir.glob("*_path.txt"):
+            try:
+                with open(path_file, 'r') as f:
+                    run_path = f.read().strip()
+                    if run_path and Path(run_path).exists():
+                        run_paths.append(run_path)
+                        print(f"  Logged run: {run_path}")
+                        
+                        # Create snapshot of this path file
+                        snapshot_file = snapshot_dir / path_file.name
+                        shutil.copy2(str(path_file), str(snapshot_file))
+                    elif run_path:
+                        print(f"  WARNING: Path exists in {path_file.name} but directory not found: {run_path}")
+            except Exception as e:
+                print(f"  WARNING: Failed to read {path_file}: {e}")
+        
+        # Store in log
+        self.run_log[run_key] = run_paths
+        
+        # Save to file
+        with open(self.run_log_file, 'w') as f:
+            json.dump(self.run_log, f, indent=2)
+        
+        print(f"  Snapshot saved to: {snapshot_dir}")
+        print(f"  Total runs logged: {len(run_paths)}")
+        
+        return run_paths
+    
+    def run_evaluation(self, run_path: str, env_id: str, episode_length: int = 1000) -> Tuple[bool, str]:
+        """
+        Run evaluation for a trained model
+        
+        Args:
+            run_path: Path to the trained model directory
+            env_id: Environment ID to evaluate on
+            episode_length: Episode length for evaluation (default: 1000)
+            
+        Returns:
+            Tuple of (success, message)
+        """
+        # Determine algorithm from path
+        algorithm = None
+        for algo in ["ippo", "mappo", "idqn", "idrqn", "qmix", "ifac", "ifppo"]:
+            if algo in run_path:
+                algorithm = algo
+                break
+        
+        if not algorithm:
+            return False, f"Could not determine algorithm from path: {run_path}"
+        
+        print(f"  Running evaluation for {algorithm} on {env_id} (episode_length={episode_length})...")
+        
+        try:
+            # Build evaluation command
+            cmd = [
+                "python", "algorithms/evaluate.py",
+                "--algorithm", algorithm,
+                "--env_id", env_id,
+                "--pretrained_models", run_path,
+                "--scenario", "constant",
+                "--episode_length", str(episode_length)
+            ]
+            
+            # Add hidden_layer_nn for algorithms with different architectures
+            if algorithm in ["idqn", "qmix"]:
+                # Single layer: (64,)
+                cmd.extend(["--hidden_layer_nn", "64"])
+            elif algorithm == "idrqn":
+                # Two layers: (64, 64) - matches training default
+                cmd.extend(["--hidden_layer_nn", "64", "64"])
+            elif algorithm in ["ifac", "ifppo"]:
+                # No hidden layers (Fourier features only): False
+                cmd.extend(["--hidden_layer_nn", "False"])
+            
+            # Run evaluation script
+            result = subprocess.run(
+                cmd,
+                cwd=self.base_dir,
+                capture_output=True,
+                text=True,
+                timeout=None
+            )
+            
+            if result.returncode == 0:
+                print(f"  Evaluation completed successfully for {algorithm}")
+                return True, "Evaluation successful"
+            else:
+                error_msg = f"Evaluation failed with return code {result.returncode}"
+                if result.stderr:
+                    error_msg += f"\nError: {result.stderr[:500]}"
+                print(f"  {error_msg}")
+                return False, error_msg
+                
+        except Exception as e:
+            error_msg = f"Error running evaluation: {str(e)}"
+            print(f"  {error_msg}")
+            return False, error_msg
     
     def run_batch_script(self, episode_length: int, total_timesteps: int, 
                         additional_params: dict = None) -> Tuple[bool, str]:
@@ -61,13 +180,21 @@ class ParameterSweep:
             with open(self.script_path, 'r') as f:
                 script_content = f.read()
             
-            # Modify parameters
+            # Modify parameters with validation
+            original_episode = "episode_length=200"
+            original_timesteps = "total_timesteps=10000"
+            
+            if original_episode not in script_content:
+                raise ValueError(f"Could not find '{original_episode}' in batch script")
+            if original_timesteps not in script_content:
+                raise ValueError(f"Could not find '{original_timesteps}' in batch script")
+            
             script_content = script_content.replace(
-                f"episode_length=200", 
+                original_episode, 
                 f"episode_length={episode_length}"
             )
             script_content = script_content.replace(
-                f"total_timesteps=10000", 
+                original_timesteps, 
                 f"total_timesteps={total_timesteps}"
             )
             
@@ -97,7 +224,7 @@ class ParameterSweep:
                 cwd=self.base_dir,
                 capture_output=False,  # Show output in real-time
                 text=True,
-                timeout=7200  # 2 hour timeout
+                timeout=14400  # 4 hours timeout
             )
             end_time = time.time()
             duration = end_time - start_time
@@ -113,7 +240,7 @@ class ParameterSweep:
             return success, log_message
             
         except subprocess.TimeoutExpired:
-            return False, "Script timed out after 2 hours"
+            return False, "Script timed out after 4 hours"
         except Exception as e:
             return False, f"Error running script: {str(e)}"
         finally:
@@ -121,10 +248,17 @@ class ParameterSweep:
             if temp_script.exists():
                 temp_script.unlink()
     
-    def move_results(self, episode_length: int, total_timesteps: int, 
+    def move_results(self, run_key: str, episode_length: int, total_timesteps: int, 
                     run_success: bool, additional_params: dict = None):
         """
-        Move the most recent run results to organized directories
+        Move logged run results to organised directories
+        
+        Args:
+            run_key: Key to look up runs in the log
+            episode_length: Episode length parameter
+            total_timesteps: Total timesteps parameter
+            run_success: Whether the run was successful
+            additional_params: Additional parameters used
         """
         # Create parameter-specific directory with readable names
         param_str = f"episode_length_{episode_length}_total_timesteps_{total_timesteps}"
@@ -137,43 +271,39 @@ class ParameterSweep:
         param_dir = self.sweep_dir / param_str
         param_dir.mkdir(exist_ok=True)
         
-        # Get the most recent runs (created in the last few minutes)  
-        recent_time = time.time() - 300  # 5 minutes ago
-        recent_runs = []
+        # Get runs from log
+        run_paths = self.run_log.get(run_key, [])
         
-        for run_dir in self.runs_dir.iterdir():
-            if run_dir.is_dir() and run_dir.stat().st_mtime > recent_time:
-                recent_runs.append(run_dir)
+        # Move runs using logged paths
+        runs_moved = 0
+        for run_path_str in run_paths:
+            run_path = Path(run_path_str)
+            if not run_path.exists():
+                print(f"  WARNING: Run path no longer exists: {run_path}")
+                continue
+                
+            try:
+                dest_run_dir = param_dir / "runs" / run_path.name
+                dest_run_dir.parent.mkdir(exist_ok=True)
+                shutil.move(str(run_path), str(dest_run_dir))
+                runs_moved += 1
+                print(f"  Moved run: {run_path.name}")
+            except Exception as e:
+                print(f"  WARNING: Failed to move run {run_path.name}: {e}")
         
-        # Get the most recent log files
-        recent_logs = []
+        # Move log files (still look for recent logs as they aren't tracked in most_recent_models)
+        recent_time = time.time() - 1800  # 30 minutes ago
+        logs_moved = 0
         for log_file in self.logs_dir.glob("batch_run_*.log"):
             if log_file.stat().st_mtime > recent_time:
-                recent_logs.append(log_file)
-        
-        # Move runs
-        runs_moved = 0
-        for run_dir in recent_runs:
-            try:
-                dest_run_dir = param_dir / "runs" / run_dir.name
-                dest_run_dir.parent.mkdir(exist_ok=True)
-                shutil.move(str(run_dir), str(dest_run_dir))
-                runs_moved += 1
-                print(f"  Moved run: {run_dir.name}")
-            except Exception as e:
-                print(f"  WARNING: Failed to move run {run_dir.name}: {e}")
-        
-        # Move logs
-        logs_moved = 0
-        for log_file in recent_logs:
-            try:
-                dest_log_dir = param_dir / "logs"
-                dest_log_dir.mkdir(exist_ok=True)
-                shutil.move(str(log_file), str(dest_log_dir / log_file.name))
-                logs_moved += 1
-                print(f"  Moved log: {log_file.name}")
-            except Exception as e:
-                print(f"  WARNING: Failed to move log {log_file.name}: {e}")
+                try:
+                    dest_log_dir = param_dir / "logs"
+                    dest_log_dir.mkdir(exist_ok=True)
+                    shutil.move(str(log_file), str(dest_log_dir / log_file.name))
+                    logs_moved += 1
+                    print(f"  Moved log: {log_file.name}")
+                except Exception as e:
+                    print(f"  WARNING: Failed to move log {log_file.name}: {e}")
         
         # Create a summary file
         summary_file = param_dir / "run_summary.txt"
@@ -188,9 +318,10 @@ class ParameterSweep:
             f.write(f"Success: {run_success}\n")
             f.write(f"Runs moved: {runs_moved}\n")
             f.write(f"Logs moved: {logs_moved}\n")
-            f.write(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Run paths logged: {len(run_paths)}\n")
+            f.write(f"Timestamp: {datetime.now().strftime('%d-%m-%y %H:%M:%S')}\n")
         
-        print(f"  Results organized in: {param_dir}")
+        print(f"  Results organised in: {param_dir}")
         print(f"  Summary saved to: {summary_file}")
     
     def run_sweep(self, episode_lengths: List[int], total_timesteps_list: List[int],
@@ -216,6 +347,9 @@ class ParameterSweep:
                     run_count += 1
                     print(f"\nRun {run_count}/{total_runs}")
                     
+                    # Create a unique run key for tracking
+                    run_key = f"run_{run_count}_ep{episode_length}_ts{total_timesteps}"
+                    
                     # Run the batch script
                     success, log_msg = self.run_batch_script(
                         episode_length, total_timesteps, additional_params
@@ -223,9 +357,28 @@ class ParameterSweep:
                     
                     if success:
                         successful_runs += 1
+                        
+                        # Log run locations after successful training
+                        print("\nLogging run locations...")
+                        run_paths = self.log_run_locations(run_key)
+                        
+                        # Run evaluation for each trained model
+                        # Use longer episode length (1000) for better evaluation statistics
+                        print("\nRunning evaluations on FLORIS...")
+                        eval_results = []
+                        for run_path in run_paths:
+                            # Use FLORIS for fast evaluation (same as training environment)
+                            eval_env = "Dec_Ablaincourt_Floris"  # Use FLORIS for speed
+                            
+                            eval_success, eval_msg = self.run_evaluation(run_path, eval_env, episode_length=1000)
+                            eval_results.append({
+                                "path": run_path,
+                                "success": eval_success,
+                                "message": eval_msg
+                            })
                     
-                    # Move results
-                    self.move_results(episode_length, total_timesteps, success, additional_params)
+                    # Move results using logged paths
+                    self.move_results(run_key, episode_length, total_timesteps, success, additional_params)
                     
                     # Update overall summary
                     with open(overall_summary, 'a') as f:
@@ -237,6 +390,8 @@ class ParameterSweep:
                         f.write(f" - {'SUCCESS' if success else 'FAILED'}\n")
                         if not success:
                             f.write(f"  Error: {log_msg}\n")
+                        elif success and 'eval_results' in locals():
+                            f.write(f"  Evaluations completed: {sum(1 for r in eval_results if r['success'])}/{len(eval_results)}\n")
         
         # Final summary
         print(f"\nParameter sweep completed!")
@@ -248,28 +403,12 @@ class ParameterSweep:
             f.write(f"Total runs: {total_runs}\n")
             f.write(f"Successful: {successful_runs}\n")
             f.write(f"Failed: {total_runs - successful_runs}\n")
-            f.write(f"Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Completed: {datetime.now().strftime('%d-%m-%y %H:%M:%S')}\n")
     
     def shutdown_system(self, delay_minutes: int = 2):
-        """
-        Shutdown the system after a delay
-        
-        Args:
-            delay_minutes: Minutes to wait before shutdown
-        """
         print(f"\nSystem will shutdown in {delay_minutes} minutes...")
-        print(f"WARNING: Save any unsaved work now!")
-        
-        # Give user time to cancel if needed
-        for i in range(delay_minutes * 60, 0, -10):
-            minutes = i // 60
-            seconds = i % 60
-            print(f"Shutdown in {minutes:02d}:{seconds:02d}... (Ctrl+C to cancel)")
-            time.sleep(10)
-        
-        print("Shutting down system now...")
         try:
-            subprocess.run(["sudo", "shutdown", "-h", "now"], check=True)
+            subprocess.run(["sudo", "shutdown", "-h", f"+{delay_minutes}"], check=True)
         except subprocess.CalledProcessError as e:
             print(f"Failed to shutdown: {e}")
             print("You may need to run: sudo shutdown -h now")
@@ -277,9 +416,9 @@ class ParameterSweep:
 
 def main():
     parser = argparse.ArgumentParser(description="Run parameter sweep for WFCRL benchmark")
-    parser.add_argument("--episode_lengths", nargs="+", type=int, default=[50, 100, 200, 400],
+    parser.add_argument("--episode_lengths", nargs="+", type=int, default=[600],
                        help="List of episode lengths to test")
-    parser.add_argument("--total_timesteps", nargs="+", type=int, default=[10000, 20000, 50000, 100000],
+    parser.add_argument("--total_timesteps", nargs="+", type=int, default=[50000],
                        help="List of total timesteps to test") 
     parser.add_argument("--base_dir", type=str, default="/home/reuben/code/wfcrl-benchmark",
                        help="Base directory of the WFCRL benchmark")
