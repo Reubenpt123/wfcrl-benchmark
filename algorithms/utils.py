@@ -25,16 +25,35 @@ def get_env_history(env):
 
 def plot_env_history(env):
     yaws, powers, loads, _ = get_env_history(env)
+    num_turbines = len(env.possible_agents)
+    
+    # Calculate total and average (per turbine) at each timestep
+    total_power = powers.sum(1)
+    avg_power = powers.mean(1)  # Average across turbines at each timestep
+    total_loads = loads.sum(1)
+    avg_loads = loads.mean(1)  # Average across turbines at each timestep
+    
     fig, ax = plt.subplots(ncols=3, figsize=(15, 5))
     ax0 = sns.lineplot(yaws, ax=ax[0])
-    ax1 = sns.lineplot(powers.sum(1), ax=ax[1])
-    ax2 = sns.lineplot(loads.sum(1), ax=ax[2])
+    
+    # Plot both total and average on the same axes
+    sns.lineplot(total_power, ax=ax[1], label='Total', color='blue')
+    sns.lineplot(avg_power, ax=ax[1], label='Average per Turbine', color='orange', linestyle='--')
+    
+    sns.lineplot(total_loads, ax=ax[2], label='Total', color='blue')
+    sns.lineplot(avg_loads, ax=ax[2], label='Average per Turbine', color='orange', linestyle='--')
+    
     ax0.set(ylabel="Yaw (°)", xlabel="Time Steps")
-    ax1.set(ylabel="Normalized Power (MW)", xlabel="Time Steps")
-    ax2.set(ylabel="Loading Indicator", xlabel="Time Steps")
+    ax[1].set(ylabel="Normalised Power (MW)", xlabel="Time Steps")
+    ax[2].set(ylabel="Loading Indicator", xlabel="Time Steps")
+    
+    # Add legends
+    ax[1].legend(loc='best')
+    ax[2].legend(loc='best')
+    
     ax0.grid(True)
-    ax1.grid(True)
-    ax2.grid(True)
+    ax[1].grid(True)
+    ax[2].grid(True)
     return fig
 
 def less_than_180(angle):

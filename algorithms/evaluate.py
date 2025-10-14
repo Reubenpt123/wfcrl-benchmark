@@ -36,8 +36,8 @@ def recurrent_q_net_deterministic_act(q_network, observation, last_action):
     action = torch.argmax(q_values, dim=-1).cpu().numpy()
     return action_space_extractor.make_dict(np.array([action]))
 
-def ALGO_TO_AGENTS(algo):
-    match algo:
+def ALGO_TO_AGENTS(algorithm):
+    match algorithm:
         case "ippo":
             from baseline_ippo import Agent
             def get_deterministic_action(agent, observation, last_action=None):
@@ -72,24 +72,24 @@ def ALGO_TO_AGENTS(algo):
             # IFPPO will be handled specially after environment creation due to global state requirement
             get_deterministic_action = None
         case _:
-            print(f"Unknown algorithm {algo}")
+            print(f"Unknown algorithm {algorithm}")
     return Agent, get_deterministic_action
 
 @dataclass
 class Args:
     exp_name: str = os.path.basename(__file__)[: -len(".py")]
     """the name of this experiment"""
-    scenario: str = "windrose"
+    scenario: str = "constant" #"windrose"
     """the name of the scenario, identified by the wind series"""
     seed: int = 1
     """seed of the experiment"""
     torch_deterministic: bool = True
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
-    cuda: bool = True
+    cuda: bool = False
     """if toggled, cuda will be enabled by default"""
     load_coef: float = 1
     """coefficient of the load penalty"""
-    episode_length: int = 150
+    episode_length: int = 1000
     """size of trajectory to store in buffer"""
     wind_data: str = "/home/reuben/code/wfcrl-benchmark/data/smarteole.csv"
     """Path to wind data for wind rose evaluation"""
@@ -97,13 +97,13 @@ class Args:
     """the id of the environment"""
     num_episodes: int = 1
     """the number of iterations (computed in runtime)"""
-    algo: str = ""
+    algorithm: str = ""
     """ the name of the trained algorithm"""
 
     # model arguments
     pretrained_models: str = ""
     """Path to pretrained models"""
-    output_folder: str = "eval"
+    output_folder: str = "evaluation"
     """output folder"""
     policy: str = "base"
     """Type of policy"""
@@ -116,15 +116,23 @@ class Args:
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    controls = ["yaw"]
-    algo = args.algo
-    assert algo in ["ippo", "mappo", "idqn", "idrqn", "qmix", "ifac", "ifppo"]
+    # Match training script control specification exactly
+    # For discrete algorithms, use dict with (min, max, step_size)
+    # For continuous algorithms, use list
+    algorithm = args.algorithm
+    assert algorithm in ["ippo", "mappo", "idqn", "idrqn", "qmix", "ifac", "ifppo"]
+    
+    if algorithm in ["mappo", "ippo", "ifac", "ifppo"]:
+        controls = ["yaw"]  # Continuous control
+    else:
+        controls = {"yaw": (-30, 30, 0.5)}  # Discrete control with specific bounds
+    
     env = envs.make(
         args.env_id,
         controls=controls, 
         max_num_steps=args.episode_length,
         load_coef=args.load_coef,
-        continuous_control=algo in ["mappo", "ippo", "ifac", "ifppo"],
+        continuous_control=algorithm in ["mappo", "ippo", "ifac", "ifppo"],
     )
     args.num_agents = env.num_turbines
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
@@ -141,19 +149,19 @@ if __name__ == "__main__":
     action_space_extractor = VectorExtractor(env.action_space(env.possible_agents[0]))
     
     # Use appropriate extractor based on algorithm
-    if algo in ["ifac", "ifppo"]:
+    if algorithm in ["ifac", "ifppo"]:
         global_obs_space = env.state_space
         partial_obs_extractor = DfacSPaceExtractor(obs_space, global_obs_space)
     else:
-        partial_obs_extractor = VectorExtractor(obs_space, filter_out=["pitch", "torque"])
+        partial_obs_extractor = VectorExtractor(obs_space) # option to filter_out=["pitch", "torque"]
     
     partial_obs_space = partial_obs_extractor.space
     action_space = action_space_extractor.space
     hidden_layer_nn = [] if not isinstance(args.hidden_layer_nn, tuple) else args.hidden_layer_nn
-    Agent, get_deterministic_action = ALGO_TO_AGENTS(algo)
+    Agent, get_deterministic_action = ALGO_TO_AGENTS(algorithm)
     
     # Create agents with algorithm-specific parameters
-    if algo in ["ifac", "ifppo"]:
+    if algorithm in ["ifac", "ifppo"]:
         # IFAC and IFPPO require features_extractor_params for Fourier features
         features_extractor_params = {
             "order": 8,  # default fourier_order

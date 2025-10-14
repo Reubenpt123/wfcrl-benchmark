@@ -46,7 +46,7 @@ class Args:
     """the id of the environment"""
     total_timesteps: int = 2000
     """total timesteps of the experiments"""
-    learning_rate: float = 7e-4
+    learning_rate: float = 3e-4 #7e-4 #
     """the learning rate of the optimizer"""
     gamma: float = 0.75
     """the discount factor gamma"""
@@ -78,7 +78,7 @@ class Args:
     """Use multi scale algorithm"""
     hidden_layer_nn: Union[bool, tuple[int]] = False #(81,)
     """number of neurons in hidden layer"""
-    yaw_max: int = 40
+    yaw_max: int = 30
     """maximum absolute yawing in state space""" 
     fourier_order: int = 8
     """order of Fourier basis"""
@@ -93,7 +93,7 @@ class Args:
     debug: bool = False
     """debug mode saves monitoring logs during training"""
     num_steps: int = 5000
-    """number of available rewards before update"""
+    """number of timesteps for buffer (set to total_timesteps at runtime)"""
 
     # to be filled in runtime
     num_iterations: int = 0
@@ -182,8 +182,8 @@ class Agent(nn.Module):
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    # args.num_iterations = 
-    # args.total_timesteps # TODO divide by dt ?// args.batch_size
+    # IFAC uses online updates, so num_steps = total_timesteps
+    args.num_steps = args.total_timesteps
     controls = {"yaw": (-args.yaw_max, args.yaw_max, args.action_bound)}
     # reward_shaper = FilteredStep(threshold=args.reward_tol)
     reward_shaper = RewardSum()
@@ -193,9 +193,7 @@ if __name__ == "__main__":
         max_num_steps=args.total_timesteps, 
         reward_shaper=reward_shaper
     )
-    args.num_steps = args.total_timesteps
     args.num_agents = env.num_turbines
-    args.reward_shaping = reward_shaper.name
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
     if args.track:
         # os.environ["HTTPS_PROXY"] = "http://irsrvpxw1-std:8082"
@@ -254,8 +252,14 @@ if __name__ == "__main__":
     start_time = time.time()
     # set single wind conditions for reproducibility
     env.reset(options={"wind_speed": 8, "wind_direction": 270})
+    last_progress_pct = -1  # Track last displayed progress percentage
 
     for step in range(1, args.total_timesteps):
+        # Progress counter - only display at 1% intervals
+        progress_pct = int(step / args.total_timesteps * 100)
+        if progress_pct > last_progress_pct:
+            print(f"Progress: {progress_pct}% (Step {step}/{args.total_timesteps})")
+            last_progress_pct = progress_pct
 
         global_step += args.num_envs
         # obs = next_obs

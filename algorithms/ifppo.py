@@ -90,7 +90,7 @@ class Args:
     """Use multi scale algorithm"""
     hidden_layer_nn: Union[bool, tuple[int]] = False #(81,)
     """number of neurons in hidden layer"""
-    yaw_max: int = 40
+    yaw_max: int = 30
     """maximum absolute yawing in state space""" 
     fourier_order: int = 8
     """order of Fourier basis"""
@@ -254,8 +254,15 @@ if __name__ == "__main__":
     #TODO: put seed back 
     # env.reset(seed=args.seed)
     env.reset(options={"wind_speed": 8, "wind_direction": 270})
+    last_progress_pct = -1  # Track last displayed progress percentage
 
     for iteration in range(1, args.num_iterations + 1):
+        # Progress counter - only display at 1% intervals
+        progress_pct = int(iteration / args.num_iterations * 100)
+        if progress_pct > last_progress_pct:
+            print(f"Progress: {progress_pct}% (Iteration {iteration}/{args.num_iterations})")
+            last_progress_pct = progress_pct
+        
         # Annealing the rate if instructed to do so.
         if args.anneal_lr:
             frac = 1.0 - (iteration - 1.0) / args.num_iterations
@@ -395,16 +402,20 @@ if __name__ == "__main__":
             writer.add_scalar(f"losses/agent_{idagent}/clipfrac", np.mean(clipfracs), global_step)
             writer.add_scalar(f"losses/agent_{idagent}/explained_variance", explained_var, global_step)
         
-            if args.save_model:
-                model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
-                for idagent, agent in enumerate(agents):
-                    torch.save(agent.state_dict(), model_path+f"_{idagent}")
-                print(f"model saved to {model_path}")
+        if (iteration % 100 == 0) and args.save_model:
+            model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
+            for idagent, agent in enumerate(agents):
+                torch.save(agent.state_dict(), model_path+f"_{idagent}")
+            print(f"model saved to {model_path}")
         
         # print("SPS:", int(global_step / (time.time() - start_time)))
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
         
     env.close()
+    model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
+    for idagent, agent in enumerate(agents):
+        torch.save(agent.state_dict(), model_path+f"_{idagent}")
+        print(f"model saved to {model_path}")
     writer.close()
 
 

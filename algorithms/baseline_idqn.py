@@ -90,7 +90,7 @@ class Args:
     """the ending epsilon for exploration"""
     exploration_fraction: float = 0.5
     """the fraction of `total-timesteps` it takes from start-e to go end-e"""
-    learning_starts: int = 10000
+    learning_starts: int = 1000
     """timestep to start learning"""
     train_frequency: int = 10
     """the frequency of training"""
@@ -151,7 +151,7 @@ def get_deterministic_action(q_network, observation, last_action):
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    controls = {"yaw": (-40, 40, 1)}  # min, max, step_size
+    controls = {"yaw": (-30, 30, 0.5)}  # min, max, step_size
     env = envs.make(
         args.env_id,
         controls=controls, 
@@ -247,8 +247,15 @@ if __name__ == "__main__":
     cumul_rewards = cumul_power = cumul_load = 0
     episode_id = 0
     last_done = False
+    last_progress_pct = -1  # Track last displayed progress percentage
 
     for global_step in range(args.total_timesteps):
+        # Progress counter - only display at 1% intervals
+        progress_pct = int((global_step + 1) / args.total_timesteps * 100)
+        if progress_pct > last_progress_pct:
+            print(f"Progress: {progress_pct}% (Step {global_step + 1}/{args.total_timesteps})")
+            last_progress_pct = progress_pct
+        
         # progressively replace old data to handle non stationarity
         if last_done:
             writer.add_scalar(f"farm/episode_reward", float(cumul_rewards), global_step)

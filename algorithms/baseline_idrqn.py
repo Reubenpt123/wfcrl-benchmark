@@ -89,7 +89,7 @@ class Args:
     """the ending epsilon for exploration"""
     exploration_fraction: float = 0.5
     """the fraction of `total-timesteps` it takes from start-e to go end-e"""
-    learning_starts: int = 200
+    learning_starts: int = 5
     """episodes to start learning"""
     pretrained_models: str = ""
     """Path to pretrained models"""
@@ -145,7 +145,7 @@ def linear_schedule(start_e: float, end_e: float, duration: int, t: int):
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    controls = {"yaw": (-40, 40)}
+    controls = {"yaw": (-30, 30, 0.5)}  # min, max, step_size
     assert args.scenario in ["constant", "windrose"]
     env = envs.make(
         args.env_id,
@@ -197,6 +197,8 @@ if __name__ == "__main__":
             last_action = multidiscrete_one_hot(action_space_extractor(last_action), action_space)
         observation = partial_obs_extractor(observation)
         input = torch.tensor(np.concatenate([observation, last_action]), dtype=torch.float32, device=device)
+        # Reset hidden state to batch_size=1 for single observation evaluation
+        q_network.reset_hidden_state(batch_size=1)
         q_values = q_network(input)
         action = torch.argmax(q_values, dim=-1).cpu().numpy()
         return action_space_extractor.make_dict(np.array([action]))
@@ -258,8 +260,15 @@ if __name__ == "__main__":
     for q_network in q_networks:
         q_network.reset_hidden_state()
 
+    last_progress_pct = -1  # Track last displayed progress percentage
 
     for global_step in range(args.total_timesteps):
+        # Progress counter - only display at 1% intervals
+        progress_pct = int((global_step + 1) / args.total_timesteps * 100)
+        if progress_pct > last_progress_pct:
+            print(f"Progress: {progress_pct}% (Step {global_step + 1}/{args.total_timesteps})")
+            last_progress_pct = progress_pct
+        
         # progressively replace old data to handle non stationarity
         if last_done:
             writer.add_scalar(f"farm/episode_reward", float(cumul_rewards), global_step)
@@ -426,6 +435,10 @@ if __name__ == "__main__":
         eval_env.reset(args.seed+global_step)
     else:
         eval_env.reset(options={"wind_speed": 8, "wind_direction": 270})
+    
+    # Reset hidden states for all networks before evaluation
+    for q_network in q_networks:
+        q_network.reset_hidden_state(batch_size=1)
     
     # Run a complete episode using the existing evaluate function
     evaluate(eval_env, q_networks)

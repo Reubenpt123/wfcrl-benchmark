@@ -69,9 +69,9 @@ class Args:
     """the discount factor gamma"""
     gae_lambda: float = 0.95 #0
     """the lambda for the general advantage estimation"""
-    num_minibatches: int = 32
+    num_minibatches: int = 8
     """the number of mini-batches"""
-    update_epochs: int = 10
+    update_epochs: int = 4
     """the K epochs to update the policy"""
     norm_adv: bool = True
     """Toggles advantages normalization"""
@@ -95,16 +95,14 @@ class Args:
     """Type of policy"""
     hidden_layer_nn: Union[bool, tuple[int, ...]] = (64, 64)
     """number of neurons in hidden layer"""
-    num_steps: int = 2048
-    """number of available rewards before update"""
+    batch_size: int = 512
+    """number of steps to collect before update (batch size for training)"""
     anneal_lr: bool = True
     """Toggle learning rate annealing for policy and value networks"""
-    freq_eval: int = 5
+    freq_eval: int = 20
     """Number of iterations between eval"""
 
     # to be filled in runtime
-    batch_size: int = 0
-    """the batch size (computed in runtime)"""
     minibatch_size: int = 0
     """the mini-batch size (computed in runtime)"""
     num_iterations: int = 0
@@ -184,10 +182,9 @@ if __name__ == "__main__":
     args = tyro.cli(Args)
     controls = ["yaw"]
     assert args.scenario in ["constant", "windrose"]
-    args.batch_size = int(args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size
-    num_episodes = int(np.ceil(args.num_steps / (args.episode_length-1)))
+    num_episodes = int(np.ceil(args.batch_size / (args.episode_length-1)))
     env = envs.make(
         args.env_id,
         controls=controls, 
@@ -288,8 +285,15 @@ if __name__ == "__main__":
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     start_time = time.time()
+    last_progress_pct = -1  # Track last displayed progress percentage
 
     for iteration in range(args.num_iterations):
+        # Progress counter - only display at 1% intervals
+        progress_pct = int((iteration + 1) / args.num_iterations * 100)
+        if progress_pct > last_progress_pct:
+            print(f"Progress: {progress_pct}% (Iteration {iteration + 1}/{args.num_iterations})")
+            last_progress_pct = progress_pct
+        
         if iteration % args.freq_eval  == 0:
             print(f"Evaluating at iteration {iteration}")
             eval_score = evaluate(env, agents)
@@ -305,7 +309,7 @@ if __name__ == "__main__":
                 optimizer.param_groups[0]["lr"] = lrnow
 
         step = pt = episode_id = 0
-        while step < args.num_steps:
+        while step < args.batch_size:
             if last_done:
                 episode_id += 1
                 pt = 0
