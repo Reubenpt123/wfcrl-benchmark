@@ -4,7 +4,7 @@
 
 # Configuration
 BASE_DIR="/home/reuben/code/wfcrl-benchmark"
-LOG_FILE="$BASE_DIR/logs/batch_run_$(date '+%Y%m%d_%H%M%S').log"
+LOG_FILE="$BASE_DIR/logs/batch_run_$(date '+%d%m%y_%H%M%S').log"
 mkdir -p "$BASE_DIR/logs"
 
 # Logging functions

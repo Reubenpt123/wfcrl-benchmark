@@ -33,6 +33,64 @@ def log_message(message: str, log_file: Path = None):
             f.write(message + '\n')
 
 
+def get_most_recent_model_path(algorithm_name: str, base_dir: Path) -> Path:
+    """Read the most recent model path from the tracking file"""
+    path_file = base_dir / "scripts" / "most_recent_models" / f"{algorithm_name.lower()}_path.txt"
+    
+    if path_file.exists():
+        with open(path_file, 'r') as f:
+            return Path(f.read().strip())
+    return None
+
+
+def evaluate_algorithm(algorithm_name: str, run_path: Path, params: dict, base_dir: Path, log_file: Path = None) -> bool:
+    """Run evaluation for a trained algorithm"""
+    timestamp = datetime.now().strftime("%d/%m/%y %H:%M")
+    log_message(f"[{timestamp}] Starting {algorithm_name} evaluation", log_file)
+    
+    # Build evaluation command
+    cmd = [
+        "python", "algorithms/evaluate.py",
+        "--algorithm", algorithm_name.lower(),
+        "--env_id", params["env_id"],
+        "--pretrained_models", str(run_path),
+        "--scenario", "constant",
+        "--episode_length", str(params.get("eval_episode_length", 300))
+    ]
+    
+    # Add hidden_layer_nn for algorithms with different architectures
+    if algorithm_name in ["IDQN", "QMIX"]:
+        # Single layer: (64,)
+        cmd.extend(["--hidden_layer_nn", "64"])
+    elif algorithm_name == "IDRQN":
+        # Two layers: (64, 64) - matches training default
+        cmd.extend(["--hidden_layer_nn", "64", "64"])
+    elif algorithm_name in ["IFAC", "IFPPO"]:
+        # No hidden layers (Fourier features only): False
+        cmd.extend(["--hidden_layer_nn", "False"])
+    
+    try:
+        # Run evaluation
+        result = subprocess.run(cmd, check=True, timeout=1800, capture_output=True, text=True, cwd=base_dir)
+        
+        timestamp = datetime.now().strftime("%d/%m/%y %H:%M")
+        log_message(f"[{timestamp}] {algorithm_name} evaluation completed successfully", log_file)
+        return True
+        
+    except subprocess.CalledProcessError as e:
+        timestamp = datetime.now().strftime("%d/%m/%y %H:%M")
+        log_message(f"[{timestamp}] {algorithm_name} evaluation failed with exit code {e.returncode}", log_file)
+        if e.stderr:
+            log_message(f"Error output: {e.stderr[:500]}", log_file)
+        if e.stdout:
+            log_message(f"Standard output: {e.stdout[:500]}", log_file)
+        return False
+    except subprocess.TimeoutExpired as e:
+        timestamp = datetime.now().strftime("%d/%m/%y %H:%M")
+        log_message(f"[{timestamp}] {algorithm_name} evaluation timed out after 30 minutes", log_file)
+        return False
+
+
 def train_algorithm(algorithm_name: str, script_path: Path, params: dict, log_file: Path = None) -> bool:
     """Train a single algorithm"""
     timestamp = datetime.now().strftime("%d/%m/%y %H:%M")
@@ -79,8 +137,9 @@ def main():
     
     # Core parameters
     parser.add_argument("--seed", type=int, default=1, help="Random seed")
-    parser.add_argument("--total_timesteps", type=int, default=3000, help="Training timesteps")
+    parser.add_argument("--total_timesteps", type=int, default=4000, help="Training timesteps")
     parser.add_argument("--episode_length", type=int, default=200, help="Episode length")
+    parser.add_argument("--eval_episode_length", type=int, default=300, help="Evaluation episode length")
     parser.add_argument("--track", action="store_true", help="Enable wandb tracking")
     
     # Select algorithms to run
@@ -96,7 +155,7 @@ def main():
     logs_dir.mkdir(exist_ok=True)
     
     # Create log file
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%d%m%y_%H%M%S")
     log_file = logs_dir / f"batch_run_{timestamp}.log"
     
     # Training parameters
@@ -104,6 +163,7 @@ def main():
         "seed": args.seed,
         "total_timesteps": args.total_timesteps,
         "episode_length": args.episode_length,
+        "eval_episode_length": args.eval_episode_length,
         "env_id": "Dec_Ablaincourt_Floris",
         "wandb_project_name": "benchmark-wfcrl-test",
         "track": args.track,
@@ -123,6 +183,7 @@ def main():
     # Train each algorithm
     successful = 0
     total = len(args.algorithms)
+    trained_models = {}  # Store model paths for later evaluation
     
     for i, algorithm_name in enumerate(args.algorithms, 1):
         log_message(f"Training {i}/{total}: {algorithm_name}", log_file)
@@ -131,6 +192,18 @@ def main():
         if script_path.exists():
             if train_algorithm(algorithm_name, script_path, params, log_file):
                 successful += 1
+                
+                # Get the model path
+                model_path = get_most_recent_model_path(algorithm_name, base_dir)
+                if model_path:
+                    trained_models[algorithm_name] = model_path
+                    log_message(f"Model saved to: {model_path}", log_file)
+                    
+                    # Run evaluation on Floris with 300 timesteps
+                    log_message(f"Running evaluation for {algorithm_name}...", log_file)
+                    evaluate_algorithm(algorithm_name, model_path, params, base_dir, log_file)
+                else:
+                    log_message(f"Warning: Could not find model path for {algorithm_name}", log_file)
         else:
             log_message(f"Script not found: {script_path}", log_file)
     
