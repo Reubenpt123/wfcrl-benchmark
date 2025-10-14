@@ -117,15 +117,9 @@ class Args:
 if __name__ == "__main__":
     args = tyro.cli(Args)
     # Match training script control specification exactly
-    # For discrete algorithms, use dict with (min, max, step_size)
-    # For continuous algorithms, use list
     algorithm = args.algorithm
     assert algorithm in ["ippo", "mappo", "idqn", "idrqn", "qmix", "ifac", "ifppo"]
-    
-    if algorithm in ["mappo", "ippo", "ifac", "ifppo"]:
-        controls = ["yaw"]  # Continuous control
-    else:
-        controls = {"yaw": (-30, 30, 0.5)}  # Discrete control with specific bounds
+    controls = {"yaw": (-30, 30, 0.5)}  # Discrete control with specific bounds
     
     env = envs.make(
         args.env_id,

@@ -65,7 +65,7 @@ class Args:
     total_timesteps: int = int(1e5)
     """total timesteps of the experiments"""
     learning_rate: float = 3e-4 #7e-4 #
-    """the learning rate of the optimizer"""
+    """the learning rate of the optimiser"""
     gamma: float = 0.99
     """the discount factor gamma"""
     gae_lambda: float = 0.95 #0
@@ -75,7 +75,7 @@ class Args:
     update_epochs: int = 4
     """the K epochs to update the policy"""
     norm_adv: bool = True
-    """Toggles advantages normalization"""
+    """Toggles advantages normalisation"""
     clip_coef: float = 0.2
     """the surrogate clipping coefficient"""
     clip_vloss: bool = True
@@ -176,7 +176,7 @@ class Agent(nn.Module):
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    controls = ["yaw"]
+    controls = {'yaw': (-30, 30, 0.5)}  # Limit yaw angles to ±30 degrees (low, high, step)
     assert args.scenario in ["constant", "windrose"]
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size
@@ -230,11 +230,11 @@ if __name__ == "__main__":
         for _ in range(args.num_agents)
     ]
     shared_critic = SharedCritic(global_obs_space, hidden_layer_nn).to(device)
-    actor_optimizers = [
+    actor_optimisers = [
         optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
         for agent in agents
     ]
-    critic_optimizer = optim.Adam(shared_critic.parameters(), lr=args.learning_rate, eps=1e-5)
+    critic_optimiser = optim.Adam(shared_critic.parameters(), lr=args.learning_rate, eps=1e-5)
 
     if args.pretrained_models:
         args.pretrained_models = Path(args.pretrained_models)
@@ -296,8 +296,8 @@ if __name__ == "__main__":
         if args.anneal_lr:
             frac = 1.0 - iteration / args.num_iterations
             lrnow = frac * args.learning_rate
-            for optimizer in actor_optimizers + [critic_optimizer]:
-                optimizer.param_groups[0]["lr"] = lrnow
+            for optimiser in actor_optimisers + [critic_optimiser]:
+                optimiser.param_groups[0]["lr"] = lrnow
 
         step = pt = episode_id = 0
         while step < args.batch_size:
@@ -361,7 +361,7 @@ if __name__ == "__main__":
             cumul_load += sum(loads)
             cumul_rewards += float(reward[0])
 
-        # normalize rewards
+        # normalise rewards
         rewards_mean = rewards[:, :, 0].flatten()[:-(args.episode_length - pt)].mean()
         rewards_std = rewards[:, :, 0].flatten()[:-(args.episode_length - pt)].std()
         rewards = (rewards - rewards_mean) / (rewards_std + 1e-8)
@@ -388,7 +388,7 @@ if __name__ == "__main__":
         b_returns = returns[:-1].transpose(0,1).reshape(-1, args.num_agents)[:args.batch_size]
         b_values = values[:-1].transpose(0,1).reshape(-1, args.num_agents)[:args.batch_size]
 
-        # Optimizing the policy and value network
+        # Optimising the policy and value network
 
         for epoch in range(args.update_epochs):
             b_inds = np.arange(args.batch_size)
@@ -422,13 +422,13 @@ if __name__ == "__main__":
                     entropy_loss = entropy.mean()
                     loss = pg_loss - args.ent_coef * entropy_loss
 
-                    actor_optimizers[idagent].zero_grad()
+                    actor_optimisers[idagent].zero_grad()
                     pg_loss.backward()
                     nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
-                    actor_optimizers[idagent].step()
+                    actor_optimisers[idagent].step()
 
                     if (iteration % 5 == 0) and (epoch == args.update_epochs-1) and (end >= args.batch_size-1):
-                        writer.add_scalar(f"charts/agent_{idagent}/learning_rate", actor_optimizers[idagent].param_groups[0]["lr"], global_step)
+                        writer.add_scalar(f"charts/agent_{idagent}/learning_rate", actor_optimisers[idagent].param_groups[0]["lr"], global_step)
                         writer.add_scalar(f"losses/agent_{idagent}/policy_loss", pg_loss.item(), global_step)
                         writer.add_scalar(f"losses/agent_{idagent}/entropy", entropy_loss.item(), global_step)
                         writer.add_scalar(f"losses/agent_{idagent}/old_approx_kl", old_approx_kl.item(), global_step)
@@ -455,10 +455,10 @@ if __name__ == "__main__":
                     v_loss = 0.5 * ((newvalue - b_returns[mb_inds, 0]) ** 2).mean()
 
                 global_v_loss = v_loss * args.vf_coef
-                critic_optimizer.zero_grad()
+                critic_optimiser.zero_grad()
                 global_v_loss.backward()
                 nn.utils.clip_grad_norm_(shared_critic.parameters(), args.max_grad_norm)
-                critic_optimizer.step()
+                critic_optimiser.step()
 
         y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
         var_y = np.var(y_true)

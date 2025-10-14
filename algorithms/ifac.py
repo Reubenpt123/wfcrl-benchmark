@@ -47,11 +47,11 @@ class Args:
     total_timesteps: int = 2000
     """total timesteps of the experiments"""
     learning_rate: float = 3e-4 #7e-4 #
-    """the learning rate of the optimizer"""
+    """the learning rate of the optimiser"""
     gamma: float = 0.75
     """the discount factor gamma"""
     norm_adv: bool = False
-    """Toggles advantages normalization"""
+    """Toggles advantages normalisation"""
     ent_coef: float = 0.01
     """coefficient of the entropy"""
     vf_coef: float = 0.5
@@ -66,8 +66,8 @@ class Args:
     """Path to pretrained models"""
     reward_tol: float = 0.00005
     """Tolerance threshold for reward function"""
-    action_bound: float = 1
-    """Bounds on the action space"""
+    action_bound: float = 0.5
+    """Bounds on the step size"""
     kl_coef:  float = 0.0
     """Weighing coefficient for KL term in loss """ 
     policy: str = "base"
@@ -234,7 +234,7 @@ if __name__ == "__main__":
         Agent(partial_obs_space, action_space, hidden_layer_nn, features_extractor_params).to(device)
         for _ in range(args.num_agents)
     ]
-    optimizers = [
+    optimisers = [
         optim.RMSprop(agent.parameters(), alpha=0.99, lr=args.learning_rate, eps=1e-5, weight_decay=0)
         for agent in agents
     ]
@@ -330,13 +330,13 @@ if __name__ == "__main__":
                 # entropy_loss = entropy.mean()
                 loss = pg_loss + v_loss * args.vf_coef
 
-                optimizers[idagent].zero_grad()
+                optimisers[idagent].zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
-                optimizers[idagent].step()
+                optimisers[idagent].step()
 
                 # TRY NOT TO MODIFY: record rewards for plotting purposes
-                writer.add_scalar(f"charts/agent_{idagent}/learning_rate", optimizers[idagent].param_groups[0]["lr"], global_step)
+                writer.add_scalar(f"charts/agent_{idagent}/learning_rate", optimisers[idagent].param_groups[0]["lr"], global_step)
                 writer.add_scalar(f"losses/agent_{idagent}/value_loss", v_loss.item(), global_step)
                 writer.add_scalar(f"losses/agent_{idagent}/policy_loss", pg_loss.item(), global_step)
                 # print("SPS:", int(global_step / (time.time() - start_time)))

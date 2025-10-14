@@ -47,7 +47,7 @@ class Args:
     total_timesteps: int = int(5e3)
     """total timesteps of the experiments"""
     learning_rate: float = 3e-4 #7e-4 #
-    """the learning rate of the optimizer"""
+    """the learning rate of the optimiser"""
     gamma: float = 0.75
     """the discount factor gamma"""
     gae_lambda: float = 0.95 #0
@@ -57,7 +57,7 @@ class Args:
     update_epochs: int = 4
     """the K epochs to update the policy"""
     norm_adv: bool = False
-    """Toggles advantages normalization"""
+    """Toggles advantages normalisation"""
     clip_coef: float = 0.2
     """the surrogate clipping coefficient"""
     clip_vloss: bool = True
@@ -78,8 +78,8 @@ class Args:
     """Path to pretrained models"""
     reward_tol: float = 0.00005
     """Tolerance threshold for reward function"""
-    action_bound: float = 1
-    """Bounds on the action space"""
+    action_bound: float = 0.5
+    """Bounds on the step size"""
     kl_coef:  float = 0.0
     """Weighing coefficient for KL term in loss """ 
     policy: str = "base"
@@ -88,7 +88,7 @@ class Args:
     """Use counter_based exploration"""
     multi_scale: bool = False
     """Use multi scale algorithm"""
-    hidden_layer_nn: Union[bool, tuple[int]] = False #(81,)
+    hidden_layer_nn: Union[bool, tuple[int]] = False
     """number of neurons in hidden layer"""
     yaw_max: int = 30
     """maximum absolute yawing in state space""" 
@@ -235,7 +235,7 @@ if __name__ == "__main__":
         Agent(partial_obs_space, action_space, hidden_layer_nn, features_extractor_params).to(device)
         for _ in range(args.num_agents)
     ]
-    optimizers = [
+    optimisers = [
         optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
         for agent in agents
     ]
@@ -267,8 +267,8 @@ if __name__ == "__main__":
         if args.anneal_lr:
             frac = 1.0 - (iteration - 1.0) / args.num_iterations
             lrnow = frac * args.learning_rate
-            for optimizer in optimizers:
-                optimizer.param_groups[0]["lr"] = lrnow
+            for optimiser in optimisers:
+                optimiser.param_groups[0]["lr"] = lrnow
 
         values[0] = values[-1]
         logprobs[0] = logprobs[-1]
@@ -332,7 +332,7 @@ if __name__ == "__main__":
         b_returns = returns[:-1].reshape(-1, args.num_agents)
         b_values = values[:-1].reshape(-1, args.num_agents)
 
-        # Optimizing the policy and value network
+        # Optimising the policy and value network
 
         for idagent, agent in enumerate(agents):
             b_inds = np.arange(args.batch_size)
@@ -380,10 +380,10 @@ if __name__ == "__main__":
                     entropy_loss = entropy.mean()
                     loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
 
-                    optimizers[idagent].zero_grad()
+                    optimisers[idagent].zero_grad()
                     loss.backward()
                     nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
-                    optimizers[idagent].step()
+                    optimisers[idagent].step()
 
                 if args.target_kl and approx_kl > args.target_kl:
                     break
@@ -393,7 +393,7 @@ if __name__ == "__main__":
             explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
             # TRY NOT TO MODIFY: record rewards for plotting purposes
-            writer.add_scalar(f"charts/agent_{idagent}/learning_rate", optimizers[idagent].param_groups[0]["lr"], global_step)
+            writer.add_scalar(f"charts/agent_{idagent}/learning_rate", optimisers[idagent].param_groups[0]["lr"], global_step)
             writer.add_scalar(f"losses/agent_{idagent}/value_loss", v_loss.item(), global_step)
             writer.add_scalar(f"losses/agent_{idagent}/policy_loss", pg_loss.item(), global_step)
             writer.add_scalar(f"losses/agent_{idagent}/entropy", entropy_loss.item(), global_step)
