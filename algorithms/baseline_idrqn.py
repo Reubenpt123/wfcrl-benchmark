@@ -93,7 +93,7 @@ class Args:
     """episodes to start learning"""
     pretrained_models: str = ""
     """Path to pretrained models"""
-    hidden_layer_nn: Union[bool, tuple[int]] = (64,64) #(120, 84)
+    hidden_layer_nn: Union[bool, tuple[int, ...]] = (64, 64) #(120, 84)
     """number of neurons in hidden layer"""
     plot_power_ylim: Union[bool, tuple[float, float]] = False
     """Optional y-axis limits for power plot as (ymin, ymax)"""
@@ -452,7 +452,8 @@ if __name__ == "__main__":
     load_ylim = args.plot_load_ylim if args.plot_load_ylim else None
     fig = plot_env_history(eval_env, env_name=args.env_id, algorithm="idrqn",
                           power_ylim=power_ylim, load_ylim=load_ylim,
-                          total_timesteps=args.total_timesteps, episode_length=args.episode_length)
+                          total_timesteps=args.total_timesteps, episode_length=args.episode_length,
+                          seed=args.seed)
     fig.savefig(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}/plot.png")
     eval_env.close()
 

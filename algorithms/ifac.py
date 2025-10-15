@@ -362,7 +362,8 @@ if __name__ == "__main__":
     load_ylim = args.plot_load_ylim if args.plot_load_ylim else None
     fig = plot_env_history(env, env_name=args.env_id, algorithm="ifac",
                           power_ylim=power_ylim, load_ylim=load_ylim,
-                          total_timesteps=args.total_timesteps, episode_length=None)
+                          total_timesteps=args.total_timesteps, episode_length=None,
+                          seed=args.seed)
     fig.savefig(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}/plot.png")
 
     # Save the run name for batch scripts to find it

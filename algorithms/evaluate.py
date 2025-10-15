@@ -109,6 +109,13 @@ class Args:
     """Type of policy"""
     hidden_layer_nn: Union[bool, tuple[int, ...]] = (64,64)
     """number of neurons in hidden layer"""
+    
+    debug: bool = False
+    """debug mode saves monitoring logs during training"""
+    num_agents: int = 1
+    """the number of agents in the environment"""
+
+    # Plotting arguments
     plot_power_ylim: Union[bool, tuple[float, float]] = False
     """Optional y-axis limits for power plot as (ymin, ymax)"""
     plot_load_ylim: Union[bool, tuple[float, float]] = False
@@ -117,11 +124,9 @@ class Args:
     """Total timesteps used for training (for plot title)"""
     training_episode_length: int = 0
     """Episode length used for training (for plot title)"""
-    debug: bool = False
-    """debug mode saves monitoring logs during training"""
-    num_agents: int = 1
-    """the number of agents in the environment"""
-
+    training_seed: int = 0
+    """Seed used for training (for plot title)"""
+    
 if __name__ == "__main__":
     args = tyro.cli(Args)
     # Match training script control specification exactly
@@ -248,9 +253,11 @@ if __name__ == "__main__":
                 # Use training parameters if provided, otherwise use evaluation parameters
                 total_timesteps = args.training_timesteps if args.training_timesteps > 0 else None
                 episode_length = args.training_episode_length if args.training_episode_length > 0 else args.episode_length
+                training_seed = args.training_seed if args.training_seed > 0 else None
                 fig = plot_env_history(env, env_name=args.env_id, algorithm=algorithm,
                                       power_ylim=power_ylim, load_ylim=load_ylim,
-                                      total_timesteps=total_timesteps, episode_length=episode_length)
+                                      total_timesteps=total_timesteps, episode_length=episode_length,
+                                      seed=training_seed)
                 fig.savefig(f"{args.pretrained_models}/{args.output_folder}/plot_iter{iteration}.png")
             except:
                 print("Could not save figure.")

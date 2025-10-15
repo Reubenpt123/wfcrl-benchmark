@@ -557,7 +557,8 @@ if __name__ == "__main__":
     load_ylim = args.plot_load_ylim if args.plot_load_ylim else None
     fig = plot_env_history(eval_env, env_name=args.env_id, algorithm="qmix",
                           power_ylim=power_ylim, load_ylim=load_ylim,
-                          total_timesteps=args.total_timesteps, episode_length=args.episode_length)
+                          total_timesteps=args.total_timesteps, episode_length=args.episode_length,
+                          seed=args.seed)
     fig.savefig(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}/plot.png")
     eval_env.close()
 

@@ -24,7 +24,7 @@ def get_env_history(env):
     return yaws, powers, loads, rewards
 
 def plot_env_history(env, env_name=None, algorithm=None, power_ylim=None, load_ylim=None, 
-                     total_timesteps=None, episode_length=None):
+                     total_timesteps=None, episode_length=None, seed=None):
     """
     Plot environment history with yaw angles, power output, and loading indicator.
     
@@ -36,17 +36,20 @@ def plot_env_history(env, env_name=None, algorithm=None, power_ylim=None, load_y
         load_ylim: Optional tuple (ymin, ymax) for load plot y-axis limits
         total_timesteps: Optional total training timesteps for title
         episode_length: Optional episode length for title
+        seed: Optional seed number for title
     """
     yaws, powers, loads, _ = get_env_history(env)
     fig, ax = plt.subplots(ncols=3, figsize=(15, 5))
     
     # Add overall title if environment and/or algorithm provided
-    if env_name or algorithm or total_timesteps or episode_length:
+    if env_name or algorithm or total_timesteps or episode_length or seed is not None:
         title_parts = []
         if env_name:
             title_parts.append(f"Environment: {env_name}")
         if algorithm:
             title_parts.append(f"Algorithm: {algorithm.upper()}")
+        if seed is not None:
+            title_parts.append(f"Seed: {seed}")
         if total_timesteps:
             title_parts.append(f"Total Timesteps: {total_timesteps:,}")
         if episode_length:
