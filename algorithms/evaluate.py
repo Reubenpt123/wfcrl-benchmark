@@ -109,6 +109,14 @@ class Args:
     """Type of policy"""
     hidden_layer_nn: Union[bool, tuple[int, ...]] = (64,64)
     """number of neurons in hidden layer"""
+    plot_power_ylim: Union[bool, tuple[float, float]] = False
+    """Optional y-axis limits for power plot as (ymin, ymax)"""
+    plot_load_ylim: Union[bool, tuple[float, float]] = False
+    """Optional y-axis limits for load plot as (ymin, ymax)"""
+    training_timesteps: int = 0
+    """Total timesteps used for training (for plot title)"""
+    training_episode_length: int = 0
+    """Episode length used for training (for plot title)"""
     debug: bool = False
     """debug mode saves monitoring logs during training"""
     num_agents: int = 1
@@ -235,7 +243,14 @@ if __name__ == "__main__":
             # with open(f"{args.output_folder}/{run_name}/history_{iteration}.pickle", 'wb') as f:
             #     pickle.dump(env.history, f, pickle.HIGHEST_PROTOCOL)
             try:
-                fig = plot_env_history(env)
+                power_ylim = args.plot_power_ylim if args.plot_power_ylim else None
+                load_ylim = args.plot_load_ylim if args.plot_load_ylim else None
+                # Use training parameters if provided, otherwise use evaluation parameters
+                total_timesteps = args.training_timesteps if args.training_timesteps > 0 else None
+                episode_length = args.training_episode_length if args.training_episode_length > 0 else args.episode_length
+                fig = plot_env_history(env, env_name=args.env_id, algorithm=algorithm,
+                                      power_ylim=power_ylim, load_ylim=load_ylim,
+                                      total_timesteps=total_timesteps, episode_length=episode_length)
                 fig.savefig(f"{args.pretrained_models}/{args.output_folder}/plot_iter{iteration}.png")
             except:
                 print("Could not save figure.")

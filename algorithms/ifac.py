@@ -80,6 +80,10 @@ class Args:
     """number of neurons in hidden layer"""
     yaw_max: int = 30
     """maximum absolute yawing in state space""" 
+    plot_power_ylim: Union[bool, tuple[float, float]] = False
+    """Optional y-axis limits for power plot as (ymin, ymax)"""
+    plot_load_ylim: Union[bool, tuple[float, float]] = False
+    """Optional y-axis limits for load plot as (ymin, ymax)"""
     fourier_order: int = 8
     """order of Fourier basis"""
     fourier_maxdim: int = 81
@@ -354,7 +358,11 @@ if __name__ == "__main__":
 
 
     # Prepare plots
-    fig = plot_env_history(env)
+    power_ylim = args.plot_power_ylim if args.plot_power_ylim else None
+    load_ylim = args.plot_load_ylim if args.plot_load_ylim else None
+    fig = plot_env_history(env, env_name=args.env_id, algorithm="ifac",
+                          power_ylim=power_ylim, load_ylim=load_ylim,
+                          total_timesteps=args.total_timesteps, episode_length=None)
     fig.savefig(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}/plot.png")
 
     # Save the run name for batch scripts to find it

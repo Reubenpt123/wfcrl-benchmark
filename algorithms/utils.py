@@ -23,18 +23,63 @@ def get_env_history(env):
     loads = pd.DataFrame(np.abs(loads).sum(0), columns=columns)
     return yaws, powers, loads, rewards
 
-def plot_env_history(env):
+def plot_env_history(env, env_name=None, algorithm=None, power_ylim=None, load_ylim=None, 
+                     total_timesteps=None, episode_length=None):
+    """
+    Plot environment history with yaw angles, power output, and loading indicator.
+    
+    Args:
+        env: Environment with history attribute
+        env_name: Optional environment name for title
+        algorithm: Optional algorithm name for title
+        power_ylim: Optional tuple (ymin, ymax) for power plot y-axis limits
+        load_ylim: Optional tuple (ymin, ymax) for load plot y-axis limits
+        total_timesteps: Optional total training timesteps for title
+        episode_length: Optional episode length for title
+    """
     yaws, powers, loads, _ = get_env_history(env)
     fig, ax = plt.subplots(ncols=3, figsize=(15, 5))
+    
+    # Add overall title if environment and/or algorithm provided
+    if env_name or algorithm or total_timesteps or episode_length:
+        title_parts = []
+        if env_name:
+            title_parts.append(f"Environment: {env_name}")
+        if algorithm:
+            title_parts.append(f"Algorithm: {algorithm.upper()}")
+        if total_timesteps:
+            title_parts.append(f"Total Timesteps: {total_timesteps:,}")
+        if episode_length:
+            title_parts.append(f"Episode Lengths: {episode_length}")
+        fig.suptitle(" | ".join(title_parts), fontsize=14, fontweight='bold')
+        plt.subplots_adjust(top=0.88)  # Make room for the title
+    
     ax0 = sns.lineplot(yaws, ax=ax[0])
     ax1 = sns.lineplot(powers.sum(1), ax=ax[1])
     ax2 = sns.lineplot(loads.sum(1), ax=ax[2])
     ax0.set(ylabel="Yaw (°)", xlabel="Time Steps")
     ax1.set(ylabel="Normalised Power (MW)", xlabel="Time Steps")
     ax2.set(ylabel="Loading Indicator", xlabel="Time Steps")
+    
+    # Set consistent yaw limits to ±35 degrees
+    ax0.set_ylim(-35, 35)
+    
+    # Set y-axis limits if provided
+    if power_ylim is not None:
+        ax1.set_ylim(power_ylim)
+    if load_ylim is not None:
+        ax2.set_ylim(load_ylim)
+    
     ax0.grid(True)
     ax1.grid(True)
     ax2.grid(True)
+    
+    # Remove whitespace around the figure edges
+    fig.tight_layout()
+    if env_name or algorithm or total_timesteps or episode_length:
+        # If we have a title, adjust to make room for it
+        plt.subplots_adjust(top=0.92)
+    
     return fig
 
 def less_than_180(angle):

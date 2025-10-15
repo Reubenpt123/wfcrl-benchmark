@@ -101,6 +101,10 @@ class Args:
     """Toggle learning rate annealing for policy and value networks"""
     freq_eval: int = 20
     """Number of iterations between eval"""
+    plot_power_ylim: Union[bool, tuple[float, float]] = False
+    """Optional y-axis limits for power plot as (ymin, ymax)"""
+    plot_load_ylim: Union[bool, tuple[float, float]] = False
+    """Optional y-axis limits for load plot as (ymin, ymax)"""
 
     # to be filled in runtime
     minibatch_size: int = 0
@@ -496,7 +500,11 @@ if __name__ == "__main__":
     evaluate(eval_env, agents)
 
     # Prepare plots from the complete evaluation episode
-    fig = plot_env_history(eval_env)
+    power_ylim = args.plot_power_ylim if args.plot_power_ylim else None
+    load_ylim = args.plot_load_ylim if args.plot_load_ylim else None
+    fig = plot_env_history(eval_env, env_name=args.env_id, algorithm="ippo", 
+                          power_ylim=power_ylim, load_ylim=load_ylim,
+                          total_timesteps=args.total_timesteps, episode_length=args.episode_length)
     fig.savefig(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}/plot.png")
     eval_env.close()
 
