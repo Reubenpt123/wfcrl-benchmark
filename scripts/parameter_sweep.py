@@ -80,7 +80,9 @@ class ParameterSweep:
         
         return run_paths
     
-    def run_evaluation(self, run_path: str, env_id: str, episode_length: int = 1000) -> Tuple[bool, str]:
+    def run_evaluation(self, run_path: str, env_id: str, episode_length: int = 1000,
+                      training_timesteps: int = None, training_episode_length: int = None,
+                      plot_power_ylim: str = None, plot_load_ylim: str = None) -> Tuple[bool, str]:
         """
         Run evaluation for a trained model
         
@@ -88,6 +90,10 @@ class ParameterSweep:
             run_path: Path to the trained model directory
             env_id: Environment ID to evaluate on
             episode_length: Episode length for evaluation (default: 1000)
+            training_timesteps: Training timesteps to display in plot
+            training_episode_length: Training episode length to display in plot
+            plot_power_ylim: Power y-axis limits as string "min max"
+            plot_load_ylim: Load y-axis limits as string "min max"
             
         Returns:
             Tuple of (success, message)
@@ -125,6 +131,18 @@ class ParameterSweep:
             elif algorithm in ["ifac", "ifppo"]:
                 # No hidden layers (Fourier features only): False
                 cmd.extend(["--hidden_layer_nn", "False"])
+            
+            # Add training parameters for plot titles
+            if training_timesteps:
+                cmd.extend(["--training_timesteps", str(training_timesteps)])
+            if training_episode_length:
+                cmd.extend(["--training_episode_length", str(training_episode_length)])
+            
+            # Add plot limits if provided
+            if plot_power_ylim:
+                cmd.extend(["--plot_power_ylim"] + plot_power_ylim.strip('"').split())
+            if plot_load_ylim:
+                cmd.extend(["--plot_load_ylim"] + plot_load_ylim.strip('"').split())
             
             # Run evaluation script
             result = subprocess.run(
@@ -370,7 +388,17 @@ class ParameterSweep:
                             # Use FLORIS for fast evaluation (same as training environment)
                             eval_env = "Dec_Ablaincourt_Floris"  # Use FLORIS for speed
                             
-                            eval_success, eval_msg = self.run_evaluation(run_path, eval_env, episode_length=1000)
+                            # Extract plot parameters from additional_params
+                            plot_power = additional_params.get("plot_power_ylim")
+                            plot_load = additional_params.get("plot_load_ylim")
+                            
+                            eval_success, eval_msg = self.run_evaluation(
+                                run_path, eval_env, episode_length=1000,
+                                training_timesteps=total_timesteps,
+                                training_episode_length=episode_length,
+                                plot_power_ylim=plot_power,
+                                plot_load_ylim=plot_load
+                            )
                             eval_results.append({
                                 "path": run_path,
                                 "success": eval_success,
@@ -416,9 +444,9 @@ class ParameterSweep:
 
 def main():
     parser = argparse.ArgumentParser(description="Run parameter sweep for WFCRL benchmark")
-    parser.add_argument("--episode_lengths", nargs="+", type=int, default=[600],
+    parser.add_argument("--episode_lengths", nargs="+", type=int, default=[100],
                        help="List of episode lengths to test")
-    parser.add_argument("--total_timesteps", nargs="+", type=int, default=[50000],
+    parser.add_argument("--total_timesteps", nargs="+", type=int, default=[500],
                        help="List of total timesteps to test") 
     parser.add_argument("--base_dir", type=str, default="/home/reuben/code/wfcrl-benchmark",
                        help="Base directory of the WFCRL benchmark")
@@ -432,18 +460,10 @@ def main():
     # Create parameter sweep instance
     sweep = ParameterSweep(args.base_dir)
     
-    # Example additional parameters (uncomment and modify as needed)
-    # additional_params_list = [
-    #     {},  # Default parameters
-    #     {"seed": 42},  # Different seed
-    #     {"learning_rate": "3e-4"},  # Different learning rate
-    # ]
-    
     # Run the sweep
     sweep.run_sweep(
         episode_lengths=args.episode_lengths,
-        total_timesteps_list=args.total_timesteps,
-        # additional_params_list=additional_params_list  # Uncomment to use
+        total_timesteps_list=args.total_timesteps
     )
     
     # Shutdown if requested

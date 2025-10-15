@@ -45,6 +45,8 @@ env_id=Dec_Ablaincourt_Floris
 scenario=constant
 wandb_project_name=benchmark-wfcrl-test #wandb_project_name=benchmark-wfcrl-v2
 episode_length=200
+plot_power_ylim="7 9.5"
+plot_load_ylim="5 8"
 
 #set -x
 
@@ -72,7 +74,8 @@ echo "Wandb project: $wandb_project_name" | tee -a "$LOG_FILE"
 # Train IDQN
 log_time "IDQN Training" "START"
 python "$BASE_DIR/algorithms/baseline_idqn.py" --seed $seed --env_id $env_id --total_timesteps $total_timesteps \
-       --$track --$save_model --wandb_project_name $wandb_project_name --episode_length $episode_length
+       --$track --$save_model --wandb_project_name $wandb_project_name --episode_length $episode_length \
+       --plot_power_ylim $plot_power_ylim --plot_load_ylim $plot_load_ylim
 log_time "IDQN Training" "END"
 # Log IDQN model path
 read -r idqn_model_path < "$BASE_DIR/scripts/most_recent_models/idqn_path.txt"
@@ -82,7 +85,8 @@ echo "IDQN model saved to: $idqn_model_path" | tee -a "$LOG_FILE"
 # Train IDRQN
 log_time "IDRQN Training" "START"
 python "$BASE_DIR/algorithms/baseline_idrqn.py" --seed $seed --env_id $env_id --total_timesteps $total_timesteps \
-       --$track --$save_model --wandb_project_name $wandb_project_name --episode_length $episode_length
+       --$track --$save_model --wandb_project_name $wandb_project_name --episode_length $episode_length \
+       --plot_power_ylim $plot_power_ylim --plot_load_ylim $plot_load_ylim
 log_time "IDRQN Training" "END"
 # Log IDRQN model path
 read -r idrqn_model_path < "$BASE_DIR/scripts/most_recent_models/idrqn_path.txt"
@@ -92,7 +96,8 @@ echo "IDRQN model saved to: $idrqn_model_path" | tee -a "$LOG_FILE"
 # Train IPPO
 log_time "IPPO Training" "START"
 python "$BASE_DIR/algorithms/baseline_ippo.py" --seed $seed --env_id $env_id --total_timesteps $total_timesteps \
-       --$track --$save_model --wandb_project_name $wandb_project_name --episode_length $episode_length
+       --$track --$save_model --wandb_project_name $wandb_project_name --episode_length $episode_length \
+       --plot_power_ylim $plot_power_ylim --plot_load_ylim $plot_load_ylim
 log_time "IPPO Training" "END"
 # Log IPPO model path
 read -r ippo_model_path < "$BASE_DIR/scripts/most_recent_models/ippo_path.txt"
@@ -102,7 +107,8 @@ echo "IPPO model saved to: $ippo_model_path" | tee -a "$LOG_FILE"
 # Train MAPPO
 log_time "MAPPO Training" "START"
 python "$BASE_DIR/algorithms/baseline_mappo.py" --seed $seed --env_id $env_id --total_timesteps $total_timesteps \
-       --$track --$save_model --wandb_project_name $wandb_project_name --episode_length $episode_length
+       --$track --$save_model --wandb_project_name $wandb_project_name --episode_length $episode_length \
+       --plot_power_ylim $plot_power_ylim --plot_load_ylim $plot_load_ylim
 log_time "MAPPO Training" "END"
 # Log MAPPO model path
 read -r mappo_model_path < "$BASE_DIR/scripts/most_recent_models/mappo_path.txt"
@@ -112,7 +118,8 @@ echo "MAPPO model saved to: $mappo_model_path" | tee -a "$LOG_FILE"
 # Train QMIX
 log_time "QMIX Training" "START"
 python "$BASE_DIR/algorithms/baseline_qmix.py" --seed $seed --env_id $env_id --total_timesteps $total_timesteps \
-       --$track --$save_model --wandb_project_name $wandb_project_name --episode_length $episode_length
+       --$track --$save_model --wandb_project_name $wandb_project_name --episode_length $episode_length \
+       --plot_power_ylim $plot_power_ylim --plot_load_ylim $plot_load_ylim
 log_time "QMIX Training" "END"
 # Log QMIX model path
 read -r qmix_model_path < "$BASE_DIR/scripts/most_recent_models/qmix_path.txt"
@@ -122,7 +129,8 @@ echo "QMIX model saved to: $qmix_model_path" | tee -a "$LOG_FILE"
 # Train IFAC
 log_time "IFAC Training" "START"
 python "$BASE_DIR/algorithms/ifac.py" --seed $seed --env_id $env_id --total_timesteps $total_timesteps \
-       --$track --$save_model --wandb_project_name $wandb_project_name
+       --$track --$save_model --wandb_project_name $wandb_project_name \
+       --plot_power_ylim $plot_power_ylim --plot_load_ylim $plot_load_ylim
 log_time "IFAC Training" "END"
 # Log IFAC model path
 read -r ifac_model_path < "$BASE_DIR/scripts/most_recent_models/ifac_path.txt"
@@ -132,7 +140,8 @@ echo "IFAC model saved to: $ifac_model_path" | tee -a "$LOG_FILE"
 # Train IFPPO
 log_time "IFPPO Training" "START"
 python "$BASE_DIR/algorithms/ifppo.py" --seed $seed --env_id $env_id --total_timesteps $total_timesteps \
-       --$track --$save_model --wandb_project_name $wandb_project_name
+       --$track --$save_model --wandb_project_name $wandb_project_name \
+       --plot_power_ylim $plot_power_ylim --plot_load_ylim $plot_load_ylim
 log_time "IFPPO Training" "END"
 # Log IFPPO model path
 read -r ifppo_model_path < "$BASE_DIR/scripts/most_recent_models/ifppo_path.txt"
