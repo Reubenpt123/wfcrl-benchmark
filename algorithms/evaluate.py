@@ -143,6 +143,14 @@ if __name__ == "__main__":
     )
     args.num_agents = env.num_turbines
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
+    
+    # Set output folder based on environment type (Floris or Fastfarm)
+    if "floris" in args.env_id.lower():
+        args.output_folder = "floris_evaluation"
+    elif "fastfarm" in args.env_id.lower():
+        args.output_folder = "fastfarm_evaluation"
+    # else: keep default "evaluation" for other environment types
+    
     Path(f"{args.pretrained_models}/{args.output_folder}").mkdir(exist_ok=True, parents=True)
 
     random.seed(args.seed)

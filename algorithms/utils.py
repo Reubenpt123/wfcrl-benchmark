@@ -255,7 +255,10 @@ class LocalSummaryWriter(SummaryWriter):
                 with out_path.open("w") as f:
                     f.write(",".join(file_df.columns)+"\n")
                 self._columns_counter[file] = file_df.columns.size
-            if file_df.columns.size == self._columns_counter[file]:
+            
+            # Get column count, defaulting to current if not tracked
+            expected_columns = self._columns_counter.get(file, file_df.columns.size)
+            if file_df.columns.size == expected_columns:
                 file_df.to_csv(out_path, mode="a", index=False, header=False)
             else:
                 warnings.warn(
