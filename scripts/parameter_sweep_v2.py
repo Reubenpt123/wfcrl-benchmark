@@ -11,7 +11,6 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-
 import tyro
 
 
@@ -34,8 +33,8 @@ DEFAULT_ALGORITHMS = ["ippo", "mappo", "idqn", "idrqn", "qmix"]
 # Options: "ippo", "mappo", "ifac", "ifppo", "idqn", "idrqn", "qmix"
 
 # Default training parameters
-DEFAULT_EPISODE_LENGTHS = [50, 100, 400]
-DEFAULT_TOTAL_TIMESTEPS = [5000, 10000, 50000, 100000]
+DEFAULT_EPISODE_LENGTHS = [50]#, 100, 400]
+DEFAULT_TOTAL_TIMESTEPS = [500]#0, 10000, 50000, 100000]
 DEFAULT_SEEDS = [1]#, 2, 3]
 
 # Default plot parameters
@@ -135,6 +134,10 @@ class SweepConfig:
     resume: bool = True
     output_dir: Optional[Path] = None
     debug: bool = DEBUG
+    auto_shutdown: bool = False
+    """Automatically shutdown the system after sweep completes"""
+    shutdown_delay_minutes: int = 5
+    """Minutes to wait before shutting down (allows time to cancel if needed)"""
 
 
 # =============================================================================
@@ -778,6 +781,10 @@ class ParameterSweep:
 
         # Print final summary
         self._print_summary(training_results, evaluation_results)
+        
+        # Auto-shutdown if requested
+        if self.config.auto_shutdown:
+            self._schedule_shutdown()
 
     def _save_summary(self, training_results: list, evaluation_results: list):
         """Save sweep results summary to JSON."""
@@ -835,6 +842,34 @@ class ParameterSweep:
         print(f"\nResults saved to: {self.sweep_dir}")
         print(f"{'='*60}\n")
 
+    def _schedule_shutdown(self):
+        """Schedule system shutdown after a delay."""
+        import subprocess
+        
+        delay_minutes = self.config.shutdown_delay_minutes
+        print(f"\n{'='*60}")
+        print(f"🔴 AUTO-SHUTDOWN SCHEDULED")
+        print(f"{'='*60}")
+        print(f"System will shutdown in {delay_minutes} minutes")
+        print(f"To cancel, run: sudo shutdown -c")
+        print(f"{'='*60}\n")
+        
+        try:
+            # Schedule shutdown using the system shutdown command
+            subprocess.run(
+                ["sudo", "shutdown", "-h", f"+{delay_minutes}"],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            print(f"✅ Shutdown scheduled successfully for +{delay_minutes} minutes")
+        except subprocess.CalledProcessError as e:
+            print(f"⚠️  Warning: Could not schedule shutdown: {e.stderr}")
+            print(f"   You may need to configure passwordless sudo for shutdown.")
+            print(f"   See scripts/shutdown.sh for setup instructions.")
+        except Exception as e:
+            print(f"⚠️  Warning: Unexpected error scheduling shutdown: {e}")
+
 
 # =============================================================================
 # CLI INTERFACE
@@ -854,6 +889,8 @@ def main(
     max_workers: int = DEFAULT_MAX_WORKERS,
     resume: bool = True,
     output_dir: Optional[str] = None,
+    auto_shutdown: bool = False,
+    shutdown_delay_minutes: int = 5,
 ):
     """
     Run a comprehensive parameter sweep for WFCRL algorithms.
@@ -873,6 +910,8 @@ def main(
         resume: Enable resume capability (skip completed runs and reuse existing models)
         output_dir: Path to sweep directory. If exists, will RESUME that sweep.
                    If new, creates sweep there. If None, creates new timestamped directory.
+        auto_shutdown: Automatically shutdown the system after sweep completes (default: False)
+        shutdown_delay_minutes: Minutes to wait before shutting down (default: 5, allows time to cancel)
 
     Examples:
         # Start a new sweep (creates parameter_sweeps/<timestamp>_parameter_sweep/)
@@ -882,10 +921,13 @@ def main(
         python parameter_sweep_v2.py \\
             --output_dir parameter_sweeps/10-00-00_16-10-25_parameter_sweep
 
-        # Start a new sweep in a custom location
+        # Long-running sweep with auto-shutdown
         python parameter_sweep_v2.py \\
-            --algorithms ippo \\
-            --output_dir my_custom_sweep
+            --algorithms ippo mappo idqn idrqn qmix \\
+            --total_timesteps 50000 100000 \\
+            --seeds 1 2 3 4 5 \\
+            --auto_shutdown True \\
+            --shutdown_delay_minutes 10
 
         # Multiple algorithms with custom parameters
         python parameter_sweep_v2.py --algorithms ippo mappo ifac \\
@@ -897,6 +939,13 @@ def main(
         # Disable resume to force re-training even if models exist
         python parameter_sweep_v2.py --algorithms ifppo \\
             --resume False
+    
+    Note on auto-shutdown:
+        Requires passwordless sudo for shutdown command. To set up:
+        1. Run: sudo visudo
+        2. Add line: your_username ALL=(ALL) NOPASSWD: /sbin/shutdown
+        3. Save and exit
+        To cancel shutdown: sudo shutdown -c
     """
     # Validate algorithms
     valid_algos = set(ALGORITHM_CONFIGS.keys())
@@ -920,6 +969,8 @@ def main(
         max_workers=max_workers,
         resume=resume,
         output_dir=Path(output_dir) if output_dir else None,
+        auto_shutdown=auto_shutdown,
+        shutdown_delay_minutes=shutdown_delay_minutes,
     )
 
     # Run the sweep
