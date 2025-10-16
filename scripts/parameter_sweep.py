@@ -1,475 +1,931 @@
 #!/usr/bin/env python3
 """
-Parameter Sweep Script for WFCRL Benchmark
-
-This script runs the ablaincourt batch script with different combinations of
-episode_length and total_timesteps parameters, then organises the results
-into structured directories.
+Comprehensive Parameter Sweep Script for WFCRL Benchmark
 """
 
-import os
-import subprocess
-import shutil
-import time
 import json
-from pathlib import Path
+import subprocess
+import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import List, Tuple, Dict
-import argparse
+from pathlib import Path
+from typing import Optional
+
+import tyro
+
+
+# ================================
+# DEFAULT PARAMETERS
+# ================================
+
+# Default environment configurations
+DEFAULT_ENVS = {
+    "ablaincourt": "Dec_Ablaincourt_Floris",
+    "turb3": "Dec_Turb3_Row1_Floris",
+    "ormonde": "Dec_Ormonde_Floris",
+}
+
+DEBUG = False  # Set to True to print all training/evaluation output to terminal
+
+# Default environment and algorithm selection
+DEFAULT_ENV_ID = DEFAULT_ENVS["ablaincourt"]
+DEFAULT_ALGORITHMS = ["ippo", "mappo", "idqn", "idrqn", "qmix"]
+# Options: "ippo", "mappo", "ifac", "ifppo", "idqn", "idrqn", "qmix"
+
+# Default training parameters
+DEFAULT_EPISODE_LENGTHS = [50, 100, 400]
+DEFAULT_TOTAL_TIMESTEPS = [5000, 10000, 50000, 100000]
+DEFAULT_SEEDS = [1]#, 2, 3]
+
+# Default plot parameters
+DEFAULT_PLOT_POWER_YLIM = (7.0, 9.5)  # (7,9.5) is appropriate for Ablaincourt
+DEFAULT_PLOT_LOAD_YLIM = (5.0, 8.0)   # (5,8) is appropriate for Ablaincourt
+
+# Evaluation parameters
+DEFAULT_EVAL_EPISODE_LENGTH = 1000
+DEFAULT_EVAL_SEED = 0
+
+# Parallel execution settings
+DEFAULT_MAX_WORKERS = 4
+
+# Algorithm-specific configurations
+ALGORITHM_CONFIGS = {
+    "ippo": {
+        "script": "algorithms/baseline_ippo.py",
+        "supports_plots": True,
+        "supports_episode_length": True,
+        "hidden_layer_nn": (64, 64),
+    },
+    "mappo": {
+        "script": "algorithms/baseline_mappo.py",
+        "supports_plots": True,
+        "supports_episode_length": True,
+        "hidden_layer_nn": (64, 64),
+    },
+    "ifac": {
+        "script": "algorithms/ifac.py",
+        "supports_plots": True,
+        "supports_episode_length": False,  # One continuous episode
+        "hidden_layer_nn": False,
+    },
+    "ifppo": {
+        "script": "algorithms/ifppo.py",
+        "supports_plots": True,
+        "supports_episode_length": False,  # One continuous episode
+        "hidden_layer_nn": False,
+    },
+    "idqn": {
+        "script": "algorithms/baseline_idqn.py",
+        "supports_plots": True,
+        "supports_episode_length": True,
+        "hidden_layer_nn": 64,
+    },
+    "idrqn": {
+        "script": "algorithms/baseline_idrqn.py",
+        "supports_plots": True,
+        "supports_episode_length": True,
+        "hidden_layer_nn": (64, 64),
+    },
+    "qmix": {
+        "script": "algorithms/baseline_qmix.py",
+        "supports_plots": True,
+        "supports_episode_length": True,
+        "hidden_layer_nn": 64,
+    },
+}
+
+
+# =============================================================================
+# DATA STRUCTURES
+# =============================================================================
+
+
+@dataclass
+class RunConfig:
+    """Configuration for a single training run."""
+
+    algorithm: str
+    env_id: str
+    episode_length: int
+    total_timesteps: int
+    seed: int
+    plot_power_ylim: Optional[tuple[float, float]] = None
+    plot_load_ylim: Optional[tuple[float, float]] = None
+
+    def get_run_id(self) -> str:
+        """Generate unique identifier for this run."""
+        return f"{self.algorithm}_{self.env_id}_el{self.episode_length}_tt{self.total_timesteps}_s{self.seed}"
+
+
+@dataclass
+class SweepConfig:
+    """Configuration for the entire parameter sweep."""
+
+    algorithms: list[str]
+    env_id: str
+    episode_lengths: list[int] = field(default_factory=lambda: DEFAULT_EPISODE_LENGTHS)
+    total_timesteps: list[int] = field(default_factory=lambda: DEFAULT_TOTAL_TIMESTEPS)
+    seeds: list[int] = field(default_factory=lambda: DEFAULT_SEEDS)
+    plot_power_ylim: Optional[tuple[float, float]] = DEFAULT_PLOT_POWER_YLIM
+    plot_load_ylim: Optional[tuple[float, float]] = DEFAULT_PLOT_LOAD_YLIM
+    eval_episode_length: int = DEFAULT_EVAL_EPISODE_LENGTH
+    eval_seed: int = DEFAULT_EVAL_SEED
+    max_workers: int = DEFAULT_MAX_WORKERS
+    resume: bool = True
+    output_dir: Optional[Path] = None
+    debug: bool = DEBUG
+
+
+# =============================================================================
+# MAIN PARAMETER SWEEP CLASS
+# =============================================================================
 
 
 class ParameterSweep:
-    def __init__(self, base_dir: str = "/home/reuben/code/wfcrl-benchmark"):
-        self.base_dir = Path(base_dir)
-        self.script_path = self.base_dir / "scripts" / "ablaincourt_batch.sh"
-        self.runs_dir = self.base_dir / "runs"
-        self.logs_dir = self.base_dir / "logs"
-        self.most_recent_models_dir = self.base_dir / "scripts" / "most_recent_models"
+    """Manages parameter sweep execution with resume capability."""
+
+    def __init__(self, config: SweepConfig):
+        self.config = config
         
-        # Create sweep results directory with readable name
-        timestamp = datetime.now().strftime("%d-%m-%y_%H-%M-%S")
-        self.sweep_dir = self.base_dir / "parameter_sweeps" / f"parameter_sweep_{timestamp}"
-        self.sweep_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Initialise run tracking log
-        self.run_log_file = self.sweep_dir / "run_locations.json"
-        self.run_log: Dict[str, List[str]] = {}
-        
-        print(f"Parameter sweep results will be saved to: {self.sweep_dir}")
-    
-    def log_run_locations(self, run_key: str):
-        """
-        Read run locations from most_recent_models directory and log them.
-        Creates a snapshot of the path files to preserve them before they get overwritten.
-        
-        Args:
-            run_key: Identifier for this set of runs
-        """
-        run_paths = []
-        
-        # Create a snapshot directory for this run's path files
-        snapshot_dir = self.sweep_dir / "path_snapshots" / run_key
-        snapshot_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Read all algorithm path files and create snapshots
-        for path_file in self.most_recent_models_dir.glob("*_path.txt"):
-            try:
-                with open(path_file, 'r') as f:
-                    run_path = f.read().strip()
-                    if run_path and Path(run_path).exists():
-                        run_paths.append(run_path)
-                        print(f"  Logged run: {run_path}")
-                        
-                        # Create snapshot of this path file
-                        snapshot_file = snapshot_dir / path_file.name
-                        shutil.copy2(str(path_file), str(snapshot_file))
-                    elif run_path:
-                        print(f"  WARNING: Path exists in {path_file.name} but directory not found: {run_path}")
-            except Exception as e:
-                print(f"  WARNING: Failed to read {path_file}: {e}")
-        
-        # Store in log
-        self.run_log[run_key] = run_paths
-        
-        # Save to file
-        with open(self.run_log_file, 'w') as f:
-            json.dump(self.run_log, f, indent=2)
-        
-        print(f"  Snapshot saved to: {snapshot_dir}")
-        print(f"  Total runs logged: {len(run_paths)}")
-        
-        return run_paths
-    
-    def run_evaluation(self, run_path: str, env_id: str, episode_length: int = 1000,
-                      training_timesteps: int = None, training_episode_length: int = None,
-                      plot_power_ylim: str = None, plot_load_ylim: str = None) -> Tuple[bool, str]:
-        """
-        Run evaluation for a trained model
-        
-        Args:
-            run_path: Path to the trained model directory
-            env_id: Environment ID to evaluate on
-            episode_length: Episode length for evaluation (default: 1000)
-            training_timesteps: Training timesteps to display in plot
-            training_episode_length: Training episode length to display in plot
-            plot_power_ylim: Power y-axis limits as string "min max"
-            plot_load_ylim: Load y-axis limits as string "min max"
+        # Determine sweep directory
+        if config.output_dir:
+            # User specified a directory - use it (for resume or custom location)
+            self.sweep_dir = config.output_dir
+            self.sweep_dir.mkdir(parents=True, exist_ok=True)
             
-        Returns:
-            Tuple of (success, message)
-        """
-        # Determine algorithm from path
-        algorithm = None
-        for algo in ["ippo", "mappo", "idqn", "idrqn", "qmix", "ifac", "ifppo"]:
-            if algo in run_path:
-                algorithm = algo
-                break
-        
-        if not algorithm:
-            return False, f"Could not determine algorithm from path: {run_path}"
-        
-        print(f"  Running evaluation for {algorithm} on {env_id} (episode_length={episode_length})...")
-        
+            # Check if resuming an existing sweep
+            existing_config = self.sweep_dir / "sweep_config.json"
+            if existing_config.exists():
+                # Resuming - load the original timestamp
+                with open(existing_config, "r") as f:
+                    saved_config = json.load(f)
+                    self.timestamp = saved_config.get("timestamp", datetime.now().strftime("%H-%M-%S_%d-%m-%y"))
+                print(f"📂 Resuming existing sweep from: {self.sweep_dir}")
+            else:
+                # New sweep in custom directory
+                self.timestamp = datetime.now().strftime("%H-%M-%S_%d-%m-%y")
+        else:
+            # No directory specified - create new one with timestamp
+            self.timestamp = datetime.now().strftime("%H-%M-%S_%d-%m-%y")
+            self.sweep_dir = Path("parameter_sweeps") / f"{self.timestamp}_parameter_sweep"
+            self.sweep_dir.mkdir(parents=True, exist_ok=True)
+
+        # Progress tracking
+        self.progress_file = self.sweep_dir / "progress.json"
+        self.completed_runs = self._load_progress()
+
+        # Save sweep configuration
+        self._save_config()
+
+    def _load_progress(self) -> set[str]:
+        """Load completed runs from progress file."""
+        if not self.progress_file.exists():
+            return set()
+
         try:
-            # Build evaluation command
-            cmd = [
-                "python", "algorithms/evaluate.py",
-                "--algorithm", algorithm,
-                "--env_id", env_id,
-                "--pretrained_models", run_path,
-                "--scenario", "constant",
-                "--episode_length", str(episode_length)
-            ]
+            with open(self.progress_file, "r") as f:
+                data = json.load(f)
+                return set(data.get("completed_runs", []))
+        except (json.JSONDecodeError, IOError):
+            print(f"Warning: Could not load progress from {self.progress_file}")
+            return set()
+
+    def _save_progress(self, run_id: str):
+        """Save progress after completing a run with file locking."""
+        import fcntl
+        
+        # Use a lock file to ensure atomic updates
+        lock_file = self.progress_file.parent / f"{self.progress_file.name}.lock"
+        
+        # Acquire lock
+        with open(lock_file, "w") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
             
-            # Add hidden_layer_nn for algorithms with different architectures
-            if algorithm in ["idqn", "qmix"]:
-                # Single layer: (64,)
-                cmd.extend(["--hidden_layer_nn", "64"])
-            elif algorithm == "idrqn":
-                # Two layers: (64, 64) - matches training default
-                cmd.extend(["--hidden_layer_nn", "64", "64"])
-            elif algorithm in ["ifac", "ifppo"]:
-                # No hidden layers (Fourier features only): False
+            try:
+                # Re-read the progress file to get latest state
+                if self.progress_file.exists():
+                    with open(self.progress_file, "r") as f:
+                        data = json.load(f)
+                        completed_runs = set(data.get("completed_runs", []))
+                else:
+                    completed_runs = set()
+                
+                # Add new run
+                completed_runs.add(run_id)
+                
+                # Save updated progress
+                data = {
+                    "completed_runs": list(completed_runs),
+                    "last_updated": datetime.now().isoformat(),
+                }
+                with open(self.progress_file, "w") as f:
+                    json.dump(data, f, indent=2)
+                
+                # Update in-memory state
+                self.completed_runs = completed_runs
+            finally:
+                # Lock is automatically released when the with block exits
+                pass
+
+    def _save_config(self):
+        """Save sweep configuration to JSON file."""
+        config_file = self.sweep_dir / "sweep_config.json"
+        config_dict = asdict(self.config)
+        # Convert Path objects to strings for JSON serialization
+        if config_dict.get("output_dir"):
+            config_dict["output_dir"] = str(config_dict["output_dir"])
+        config_dict["sweep_dir"] = str(self.sweep_dir)
+        config_dict["timestamp"] = self.timestamp
+
+        with open(config_file, "w") as f:
+            json.dump(config_dict, f, indent=2)
+
+    def generate_run_configs(self) -> list[RunConfig]:
+        """Generate all run configurations for the sweep."""
+        configs = []
+        for algo in self.config.algorithms:
+            for episode_length in self.config.episode_lengths:
+                for total_timesteps in self.config.total_timesteps:
+                    for seed in self.config.seeds:
+                        run_config = RunConfig(
+                            algorithm=algo,
+                            env_id=self.config.env_id,
+                            episode_length=episode_length,
+                            total_timesteps=total_timesteps,
+                            seed=seed,
+                            plot_power_ylim=self.config.plot_power_ylim,
+                            plot_load_ylim=self.config.plot_load_ylim,
+                        )
+                        configs.append(run_config)
+        return configs
+
+    def run_training(self, run_config: RunConfig) -> dict:
+        """Execute a single training run."""
+        run_id = run_config.get_run_id()
+
+        # Check if already completed in progress.json
+        if self.config.resume and run_id in self.completed_runs:
+            print(f"⏭️  Skipping completed run: {run_id}")
+            return {"status": "skipped", "run_id": run_id}
+
+        # Check if a model already exists in parameter_sweep directories (fully trained models only)
+        if self.config.resume:
+            existing_run_path = self._find_existing_run_path(run_config)
+            if existing_run_path:
+                print(f"🔍 Found existing model (not in progress): {run_id}")
+                print(f"   Located at: {existing_run_path}")
+                
+                # Check if model is external and needs to be copied
+                run_path_obj = Path(existing_run_path).resolve()
+                sweep_dir_obj = self.sweep_dir.resolve()
+                
+                if sweep_dir_obj in run_path_obj.parents:
+                    # Already in sweep directory
+                    final_path = existing_run_path
+                    print(f"   ✓ Model already in sweep directory")
+                else:
+                    # External model, copy it
+                    print(f"   📋 Copying model to sweep directory...")
+                    organised_path = self._organise_run(existing_run_path, run_config, copy_only=True)
+                    final_path = organised_path if organised_path else existing_run_path
+                
+                # Mark as completed in progress
+                self._save_progress(run_id)
+                
+                return {
+                    "status": "success",
+                    "run_id": run_id,
+                    "run_path": final_path,
+                    "duration": 0,
+                    "reused": True,
+                }
+
+        print(f"🚀 Starting training: {run_id}")
+        start_time = time.time()
+
+        # Get algorithm script path
+        algo_config = ALGORITHM_CONFIGS.get(run_config.algorithm)
+        if not algo_config:
+            return {
+                "status": "error",
+                "run_id": run_id,
+                "error": f"Unknown algorithm: {run_config.algorithm}",
+            }
+
+        script_path = Path(algo_config["script"])
+        if not script_path.exists():
+            return {
+                "status": "error",
+                "run_id": run_id,
+                "error": f"Script not found: {script_path}",
+            }
+
+        # Build command
+        cmd = [
+            "python",
+            str(script_path),
+            "--env_id",
+            run_config.env_id,
+             "--total_timesteps",
+            str(run_config.total_timesteps),
+            "--seed",
+            str(run_config.seed),
+        ]
+        
+        # Add episode_length only if algorithm supports it
+        if algo_config.get("supports_episode_length", True):
+            cmd.extend(["--episode_length", str(run_config.episode_length)])
+        
+        # Add hidden_layer_nn if specified
+        if "hidden_layer_nn" in algo_config:
+            hidden_layers = algo_config["hidden_layer_nn"]
+            if hidden_layers is False:
+                # Pass False as a parameter
                 cmd.extend(["--hidden_layer_nn", "False"])
+            elif isinstance(hidden_layers, tuple):
+                # For tuple like (64, 64), pass as separate arguments like shell: --hidden_layer_nn 64 64
+                cmd.append("--hidden_layer_nn")
+                cmd.extend(str(x) for x in hidden_layers)
+            else:
+                # For single int like 64
+                cmd.extend(["--hidden_layer_nn", str(hidden_layers)])
+    
+        # Add plot parameters if supported
+        if algo_config["supports_plots"]:
+            if run_config.plot_power_ylim:
+                cmd.extend(
+                    [
+                        "--plot_power_ylim",
+                        str(run_config.plot_power_ylim[0]),
+                        str(run_config.plot_power_ylim[1]),
+                    ]
+                )
+            if run_config.plot_load_ylim:
+                cmd.extend(
+                    [
+                        "--plot_load_ylim",
+                        str(run_config.plot_load_ylim[0]),
+                        str(run_config.plot_load_ylim[1]),
+                    ]
+                )
+
+        # Execute training
+        try:
+            # Debug: print command being executed
+            if self.config.debug:
+                print(f"🐛 Debug - Executing command: {' '.join(cmd)}")
             
-            # Add training parameters for plot titles
-            if training_timesteps:
-                cmd.extend(["--training_timesteps", str(training_timesteps)])
-            if training_episode_length:
-                cmd.extend(["--training_episode_length", str(training_episode_length)])
-            
-            # Add plot limits if provided
-            if plot_power_ylim:
-                cmd.extend(["--plot_power_ylim"] + plot_power_ylim.strip('"').split())
-            if plot_load_ylim:
-                cmd.extend(["--plot_load_ylim"] + plot_load_ylim.strip('"').split())
-            
-            # Run evaluation script
             result = subprocess.run(
                 cmd,
-                cwd=self.base_dir,
-                capture_output=True,
+                capture_output=not self.config.debug,  # Don't capture if debug (stream to terminal)
                 text=True,
-                timeout=None
+                timeout=3600,  # 1 hour timeout
             )
             
-            if result.returncode == 0:
-                print(f"  Evaluation completed successfully for {algorithm}")
-                return True, "Evaluation successful"
-            else:
-                error_msg = f"Evaluation failed with return code {result.returncode}"
-                if result.stderr:
-                    error_msg += f"\nError: {result.stderr[:500]}"
-                print(f"  {error_msg}")
-                return False, error_msg
-                
-        except Exception as e:
-            error_msg = f"Error running evaluation: {str(e)}"
-            print(f"  {error_msg}")
-            return False, error_msg
-    
-    def run_batch_script(self, episode_length: int, total_timesteps: int, 
-                        additional_params: dict = None) -> Tuple[bool, str]:
-        """
-        Run the batch script with specified parameters
-        
-        Args:
-            episode_length: Length of each episode in steps
-            total_timesteps: Total timesteps for training
-            additional_params: Additional parameters to modify in the script
-            
-        Returns:
-            Tuple of (success, log_message)
-        """
-        print(f"\n{'='*60}")
-        print(f"Running batch script with:")
-        print(f"  Episode Length: {episode_length}")
-        print(f"  Total Timesteps: {total_timesteps}")
-        if additional_params:
-            for key, value in additional_params.items():
-                print(f"  {key}: {value}")
-        print(f"{'='*60}")
-        
-        # Create a temporary modified script with the new parameters
-        temp_script = self.base_dir / "scripts" / "temp_ablaincourt_batch.sh"
-        
-        try:
-            # Read the original script
-            with open(self.script_path, 'r') as f:
-                script_content = f.read()
-            
-            # Modify parameters with validation
-            original_episode = "episode_length=200"
-            original_timesteps = "total_timesteps=10000"
-            
-            if original_episode not in script_content:
-                raise ValueError(f"Could not find '{original_episode}' in batch script")
-            if original_timesteps not in script_content:
-                raise ValueError(f"Could not find '{original_timesteps}' in batch script")
-            
-            script_content = script_content.replace(
-                original_episode, 
-                f"episode_length={episode_length}"
-            )
-            script_content = script_content.replace(
-                original_timesteps, 
-                f"total_timesteps={total_timesteps}"
-            )
-            
-            # Apply additional parameters if provided
-            if additional_params:
-                for param, value in additional_params.items():
-                    # Find and replace parameter lines
-                    lines = script_content.split('\n')
-                    for i, line in enumerate(lines):
-                        if line.strip().startswith(f"{param}="):
-                            lines[i] = f"{param}={value}"
-                            break
-                    script_content = '\n'.join(lines)
-            
-            # Write temporary script
-            with open(temp_script, 'w') as f:
-                f.write(script_content)
-            
-            # Make it executable
-            os.chmod(temp_script, 0o755)
-            
-            # Run the script with real-time output
-            start_time = time.time()
-            print("Starting batch script execution...")
-            result = subprocess.run(
-                ["bash", str(temp_script)],
-                cwd=self.base_dir,
-                capture_output=False,  # Show output in real-time
-                text=True,
-                timeout=14400  # 4 hours timeout
-            )
-            end_time = time.time()
-            duration = end_time - start_time
-            
-            success = result.returncode == 0
-            log_message = f"Run completed in {duration:.1f}s. Return code: {result.returncode}"
-            
-            if not success:
-                print(f"Script failed with return code: {result.returncode}")
-            else:
-                print(f"Script completed successfully in {duration:.1f}s")
-            
-            return success, log_message
-            
+            # Debug: print output
+            if self.config.debug and result.stdout:
+                print(f"🐛 Debug - STDOUT for {run_id}:\n{result.stdout}")
+            if self.config.debug and result.stderr:
+                print(f"🐛 Debug - STDERR for {run_id}:\n{result.stderr}")
+
+            if result.returncode != 0:
+                error_msg = f"Training failed with exit code {result.returncode}"
+                print(f"❌ {error_msg}: {run_id}")
+                if not self.config.debug:
+                    print(f"STDERR: {result.stderr[-500:]}")  # Last 500 chars
+                return {"status": "failed", "run_id": run_id, "error": error_msg}
+
+            # Extract run path from stdout (models saved in /runs/{run_name}/)
+            run_path = self._extract_run_path(result.stdout)
+
+            duration = time.time() - start_time
+            print(f"✅ Completed training: {run_id} ({duration:.1f}s)")
+
+            # Organise run into sweep directory
+            organised_path = self._organise_run(run_path, run_config)
+
+            # Save progress
+            self._save_progress(run_id)
+
+            return {
+                "status": "success",
+                "run_id": run_id,
+                "run_path": organised_path if organised_path else run_path,
+                "duration": duration,
+            }
+
         except subprocess.TimeoutExpired:
-            return False, "Script timed out after 4 hours"
+            print(f"⏱️  Training timeout: {run_id}")
+            return {"status": "timeout", "run_id": run_id}
         except Exception as e:
-            return False, f"Error running script: {str(e)}"
-        finally:
-            # Clean up temporary script
-            if temp_script.exists():
-                temp_script.unlink()
-    
-    def move_results(self, run_key: str, episode_length: int, total_timesteps: int, 
-                    run_success: bool, additional_params: dict = None):
-        """
-        Move logged run results to organised directories
+            print(f"❌ Training error: {run_id} - {e}")
+            return {"status": "error", "run_id": run_id, "error": str(e)}
+
+    def _extract_run_path(self, stdout: str) -> Optional[str]:
+        """Extract the run path from training output."""
+        # Look for patterns like "runs/{run_name}" or "Saving to: ..."
+        for line in stdout.split("\n"):
+            if "runs/" in line:
+                # Simple heuristic - extract path containing "runs/"
+                parts = line.split()
+                for part in parts:
+                    if "runs/" in part:
+                        path = part.strip(",").strip("'").strip('"')
+                        # If path includes a filename, return just the directory
+                        if path.endswith('.cleanrl_model') or path.endswith('.pt') or path.endswith('.pth'):
+                            path = str(Path(path).parent)
+                        return path
+        return None
+
+    def _organise_run(self, run_path: Optional[str], run_config: RunConfig, copy_only: bool = False) -> Optional[str]:
+        """Move or copy a completed run directory into the sweep directory with a readable name.
         
         Args:
-            run_key: Key to look up runs in the log
-            episode_length: Episode length parameter
-            total_timesteps: Total timesteps parameter
-            run_success: Whether the run was successful
-            additional_params: Additional parameters used
+            run_path: Path to the run directory
+            run_config: Configuration for this run
+            copy_only: If True, copy instead of move (for existing runs from other sweeps)
         """
-        # Create parameter-specific directory with readable names
-        param_str = f"episode_length_{episode_length}_total_timesteps_{total_timesteps}"
-        if additional_params:
-            for key, value in additional_params.items():
-                # Convert parameter names to readable format
-                readable_key = key.replace('_', ' ').title().replace(' ', '_')
-                param_str += f"_{readable_key}_{value}"
+        if not run_path:
+            return None
         
-        param_dir = self.sweep_dir / param_str
-        param_dir.mkdir(exist_ok=True)
+        import shutil
         
-        # Get runs from log
-        run_paths = self.run_log.get(run_key, [])
+        source_path = Path(run_path)
+        if not source_path.exists():
+            print(f"⚠️  Warning: Run path not found for organisation: {run_path}")
+            return None
         
-        # Move runs using logged paths
-        runs_moved = 0
-        for run_path_str in run_paths:
-            run_path = Path(run_path_str)
-            if not run_path.exists():
-                print(f"  WARNING: Run path no longer exists: {run_path}")
-                continue
-                
-            try:
-                dest_run_dir = param_dir / "runs" / run_path.name
-                dest_run_dir.parent.mkdir(exist_ok=True)
-                shutil.move(str(run_path), str(dest_run_dir))
-                runs_moved += 1
-                print(f"  Moved run: {run_path.name}")
-            except Exception as e:
-                print(f"  WARNING: Failed to move run {run_path.name}: {e}")
+        # Create runs subdirectory in sweep directory with algorithm folder
+        runs_subdir = self.sweep_dir / "runs" / run_config.algorithm
+        runs_subdir.mkdir(parents=True, exist_ok=True)
         
-        # Move log files (still look for recent logs as they aren't tracked in most_recent_models)
-        recent_time = time.time() - 1800  # 30 minutes ago
-        logs_moved = 0
-        for log_file in self.logs_dir.glob("batch_run_*.log"):
-            if log_file.stat().st_mtime > recent_time:
-                try:
-                    dest_log_dir = param_dir / "logs"
-                    dest_log_dir.mkdir(exist_ok=True)
-                    shutil.move(str(log_file), str(dest_log_dir / log_file.name))
-                    logs_moved += 1
-                    print(f"  Moved log: {log_file.name}")
-                except Exception as e:
-                    print(f"  WARNING: Failed to move log {log_file.name}: {e}")
+        # Create readable name: seed{seed}_el{episode_length}_tt{total_timesteps}
+        readable_name = (
+            f"seed{run_config.seed}_"
+            f"el{run_config.episode_length}_"
+            f"tt{run_config.total_timesteps}"
+        )
         
-        # Create a summary file
-        summary_file = param_dir / "run_summary.txt"
-        with open(summary_file, 'w') as f:
-            f.write(f"Parameter Sweep Run Summary\n")
-            f.write(f"{'='*30}\n")
-            f.write(f"Episode Length: {episode_length}\n")
-            f.write(f"Total Timesteps: {total_timesteps}\n")
-            if additional_params:
-                for key, value in additional_params.items():
-                    f.write(f"{key}: {value}\n")
-            f.write(f"Success: {run_success}\n")
-            f.write(f"Runs moved: {runs_moved}\n")
-            f.write(f"Logs moved: {logs_moved}\n")
-            f.write(f"Run paths logged: {len(run_paths)}\n")
-            f.write(f"Timestamp: {datetime.now().strftime('%d-%m-%y %H:%M:%S')}\n")
+        dest_path = runs_subdir / readable_name
         
-        print(f"  Results organised in: {param_dir}")
-        print(f"  Summary saved to: {summary_file}")
-    
-    def run_sweep(self, episode_lengths: List[int], total_timesteps_list: List[int],
-                  additional_params_list: List[dict] = None):
-        """
-        Run a parameter sweep with all combinations
-        """
-        if additional_params_list is None:
-            additional_params_list = [{}]
+        # Handle name collision (shouldn't happen but just in case)
+        counter = 1
+        while dest_path.exists():
+            dest_path = runs_subdir / f"{readable_name}_{counter}"
+            counter += 1
         
-        total_runs = len(episode_lengths) * len(total_timesteps_list) * len(additional_params_list)
-        print(f"\nStarting parameter sweep with {total_runs} total runs")
-        
-        # Create overall summary
-        overall_summary = self.sweep_dir / "sweep_summary.txt"
-        
-        run_count = 0
-        successful_runs = 0
-        
-        for episode_length in episode_lengths:
-            for total_timesteps in total_timesteps_list:
-                for additional_params in additional_params_list:
-                    run_count += 1
-                    print(f"\nRun {run_count}/{total_runs}")
-                    
-                    # Create a unique run key for tracking
-                    run_key = f"run_{run_count}_ep{episode_length}_ts{total_timesteps}"
-                    
-                    # Run the batch script
-                    success, log_msg = self.run_batch_script(
-                        episode_length, total_timesteps, additional_params
-                    )
-                    
-                    if success:
-                        successful_runs += 1
-                        
-                        # Log run locations after successful training
-                        print("\nLogging run locations...")
-                        run_paths = self.log_run_locations(run_key)
-                        
-                        # Run evaluation for each trained model
-                        # Use longer episode length (1000) for better evaluation statistics
-                        print("\nRunning evaluations on FLORIS...")
-                        eval_results = []
-                        for run_path in run_paths:
-                            # Use FLORIS for fast evaluation (same as training environment)
-                            eval_env = "Dec_Ablaincourt_Floris"  # Use FLORIS for speed
-                            
-                            # Extract plot parameters from additional_params
-                            plot_power = additional_params.get("plot_power_ylim")
-                            plot_load = additional_params.get("plot_load_ylim")
-                            
-                            eval_success, eval_msg = self.run_evaluation(
-                                run_path, eval_env, episode_length=1000,
-                                training_timesteps=total_timesteps,
-                                training_episode_length=episode_length,
-                                plot_power_ylim=plot_power,
-                                plot_load_ylim=plot_load
-                            )
-                            eval_results.append({
-                                "path": run_path,
-                                "success": eval_success,
-                                "message": eval_msg
-                            })
-                    
-                    # Move results using logged paths
-                    self.move_results(run_key, episode_length, total_timesteps, success, additional_params)
-                    
-                    # Update overall summary
-                    with open(overall_summary, 'a') as f:
-                        f.write(f"Run {run_count}: Episode_Length_{episode_length}_Total_Timesteps_{total_timesteps}")
-                        if additional_params:
-                            for key, value in additional_params.items():
-                                readable_key = key.replace('_', ' ').title().replace(' ', '_')
-                                f.write(f"_{readable_key}_{value}")
-                        f.write(f" - {'SUCCESS' if success else 'FAILED'}\n")
-                        if not success:
-                            f.write(f"  Error: {log_msg}\n")
-                        elif success and 'eval_results' in locals():
-                            f.write(f"  Evaluations completed: {sum(1 for r in eval_results if r['success'])}/{len(eval_results)}\n")
-        
-        # Final summary
-        print(f"\nParameter sweep completed!")
-        print(f"Successful runs: {successful_runs}/{total_runs}")
-        print(f"Results saved to: {self.sweep_dir}")
-        
-        with open(overall_summary, 'a') as f:
-            f.write(f"\nSweep Summary:\n")
-            f.write(f"Total runs: {total_runs}\n")
-            f.write(f"Successful: {successful_runs}\n")
-            f.write(f"Failed: {total_runs - successful_runs}\n")
-            f.write(f"Completed: {datetime.now().strftime('%d-%m-%y %H:%M:%S')}\n")
-    
-    def shutdown_system(self, delay_minutes: int = 2):
-        print(f"\nSystem will shutdown in {delay_minutes} minutes...")
         try:
-            subprocess.run(["sudo", "shutdown", "-h", f"+{delay_minutes}"], check=True)
-        except subprocess.CalledProcessError as e:
-            print(f"Failed to shutdown: {e}")
-            print("You may need to run: sudo shutdown -h now")
+            if copy_only:
+                shutil.copytree(str(source_path), str(dest_path))
+                action = "Copied"
+            else:
+                shutil.move(str(source_path), str(dest_path))
+                action = "Moved"
+            
+            # Use absolute paths to avoid relative_to issues
+            dest_path_abs = dest_path.resolve()
+            try:
+                display_path = dest_path_abs.relative_to(Path.cwd().resolve())
+            except ValueError:
+                # If relative_to fails, just use the absolute path
+                display_path = dest_path_abs
+            print(f"📁 {action} run to: {display_path}")
+            return str(dest_path)
+        except Exception as e:
+            print(f"⚠️  Warning: Could not {'copy' if copy_only else 'move'} run {run_config.get_run_id()}: {e}")
+            return None
+
+    def _find_existing_run_path(self, run_config: RunConfig) -> Optional[str]:
+        """Find the run path for a previously completed training run.
+        
+        Searches in exact pattern: parameter_sweeps/{*}/runs/{algorithm}/seed{X}_el{Y}_tt{Z}
+        
+        Args:
+            run_config: Configuration for the run to find
+        
+        Returns:
+            Path to the run directory if found, None otherwise
+        """
+        # Build exact directory name pattern: seed{seed}_el{episode_length}_tt{total_timesteps}
+        target_dir_name = (
+            f"seed{run_config.seed}_"
+            f"el{run_config.episode_length}_"
+            f"tt{run_config.total_timesteps}"
+        )
+        
+        # Search pattern: parameter_sweeps/{*}/runs/{algorithm}/{target_dir_name}
+        parameter_sweeps_dir = Path("parameter_sweeps")
+        if not parameter_sweeps_dir.exists():
+            return None
+        
+        # Iterate through all sweep directories (most recent first)
+        for sweep_dir in sorted(parameter_sweeps_dir.iterdir(), reverse=True):
+            if not sweep_dir.is_dir():
+                continue
+            
+            # Check exact path: parameter_sweeps/{sweep_dir}/runs/{algorithm}/{target_dir_name}
+            target_path = sweep_dir / "runs" / run_config.algorithm / target_dir_name
+            
+            if target_path.exists() and target_path.is_dir():
+                # Verify it has model files
+                model_files = list(target_path.glob("*model*"))
+                if model_files:
+                    # Additional validation: check the path contains the algorithm name
+                    # to avoid picking up wrong models
+                    if run_config.algorithm in str(target_path):
+                        print(f"   📂 Found model in: {target_path}")
+                        print(f"   📂 Model files: {[f.name for f in model_files[:3]]}")  # Show first 3
+                        return str(target_path)
+                    else:
+                        print(f"   ⚠️  Skipping {target_path} - algorithm mismatch")
+        
+        return None
+
+    def run_evaluation(self, run_config: RunConfig, run_path: str) -> dict:
+        """Execute evaluation for a trained model."""
+        print(f"📊 Evaluating: {run_config.get_run_id()}")
+        print(f"   Using model from: {run_path}")
+
+        if not run_path or not Path(run_path).exists():
+            return {
+                "status": "error",
+                "run_id": run_config.get_run_id(),
+                "error": "Run path not found",
+            }
+
+        cmd = [
+            "mpiexec",
+            "-n",
+            "1",
+            "python",
+            "algorithms/evaluate.py",
+            "--seed",
+            str(self.config.eval_seed),
+            "--algorithm",
+            run_config.algorithm,
+            "--env_id",
+            run_config.env_id,
+            "--pretrained_models",
+            run_path,
+            "--episode_length",
+            str(self.config.eval_episode_length),
+            "--training_timesteps",
+            str(run_config.total_timesteps),
+            "--training_episode_length",
+            str(run_config.episode_length),
+            "--training_seed",
+            str(run_config.seed),
+        ]
+
+        # Add hidden_layer_nn if specified in algorithm config
+        algo_config = ALGORITHM_CONFIGS.get(run_config.algorithm)
+        if algo_config and "hidden_layer_nn" in algo_config:
+            hidden_layers = algo_config["hidden_layer_nn"]
+            if hidden_layers is False:
+                # Pass False as a parameter
+                cmd.extend(["--hidden_layer_nn", "False"])
+            elif isinstance(hidden_layers, tuple):
+                # For tuple like (64, 64), pass as separate arguments like shell: --hidden_layer_nn 64 64
+                cmd.append("--hidden_layer_nn")
+                cmd.extend(str(x) for x in hidden_layers)
+            else:
+                # For single int like 64
+                cmd.extend(["--hidden_layer_nn", str(hidden_layers)])
+        
+        # Add plot parameters
+        if run_config.plot_power_ylim:
+            cmd.extend(
+                [
+                    "--plot_power_ylim",
+                    str(run_config.plot_power_ylim[0]),
+                    str(run_config.plot_power_ylim[1]),
+                ]
+            )
+        if run_config.plot_load_ylim:
+            cmd.extend(
+                [
+                    "--plot_load_ylim",
+                    str(run_config.plot_load_ylim[0]),
+                    str(run_config.plot_load_ylim[1]),
+                ]
+            )
+
+        try:
+            # Debug: print command being executed
+            if self.config.debug:
+                print(f"🐛 Debug - Eval command: {' '.join(cmd)}")
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=not self.config.debug,  # Don't capture if debug (stream to terminal)
+                text=True,
+                timeout=600,  # 10 minute timeout
+            )
+            
+            # Debug: print output
+            if self.config.debug and result.stdout:
+                print(f"🐛 Debug - Eval STDOUT for {run_config.get_run_id()}:\n{result.stdout}")
+            if self.config.debug and result.stderr:
+                print(f"🐛 Debug - Eval STDERR for {run_config.get_run_id()}:\n{result.stderr}")
+
+            if result.returncode != 0:
+                print(f"❌ Evaluation failed: {run_config.get_run_id()}")
+                if not self.config.debug:
+                    print(f"   Error: {result.stderr[-500:]}")  # Last 500 chars of stderr
+                return {
+                    "status": "failed",
+                    "run_id": run_config.get_run_id(),
+                    "error": f"Exit code {result.returncode}: {result.stderr[-200:]}",
+                }
+
+            print(f"✅ Evaluation complete: {run_config.get_run_id()}")
+            return {"status": "success", "run_id": run_config.get_run_id()}
+
+        except Exception as e:
+            print(f"❌ Evaluation error: {run_config.get_run_id()} - {e}")
+            return {
+                "status": "error",
+                "run_id": run_config.get_run_id(),
+                "error": str(e),
+            }
+
+    def run_sweep(self):
+        """Execute the entire parameter sweep."""
+        print(f"\n{'='*60}")
+        print(f"Starting Parameter Sweep")
+        print(f"Output directory: {self.sweep_dir}")
+        print(f"{'='*60}\n")
+
+        # Generate all run configurations
+        run_configs = self.generate_run_configs()
+        total_runs = len(run_configs)
+        print(f"Total runs to execute: {total_runs}")
+        print(f"Algorithms: {', '.join(self.config.algorithms)}")
+        print(f"Environment: {self.config.env_id}")
+        print(
+            f"Episode lengths: {', '.join(map(str, self.config.episode_lengths))}"
+        )
+        print(
+            f"Total timesteps: {', '.join(map(str, self.config.total_timesteps))}"
+        )
+        print(f"Seeds: {', '.join(map(str, self.config.seeds))}")
+        print(f"Max parallel workers: {self.config.max_workers}")
+        print(f"Resume mode: {'enabled' if self.config.resume else 'disabled'}")
+        print(f"\n{'='*60}\n")
+
+        # Track results
+        training_results = []
+        evaluation_results = []
+
+        # Execute training runs (parallel)
+        print("Phase 1: Training")
+        print("-" * 60)
+        training_results_dict = {}  # Map run_id to result
+        with ProcessPoolExecutor(max_workers=self.config.max_workers) as executor:
+            future_to_config = {}
+            for i, config in enumerate(run_configs):
+                # Add 1 second delay between submitting each job to ensure unique timestamps
+                if i > 0:
+                    time.sleep(1)
+                future_to_config[executor.submit(self.run_training, config)] = config
+
+            for future in as_completed(future_to_config):
+                config = future_to_config[future]
+                try:
+                    result = future.result()
+                    training_results_dict[config.get_run_id()] = result
+                except Exception as e:
+                    print(f"❌ Unexpected error for {config.get_run_id()}: {e}")
+                    training_results_dict[config.get_run_id()] = {
+                        "status": "error",
+                        "run_id": config.get_run_id(),
+                        "error": str(e),
+                    }
+        
+        # Build training_results in the same order as run_configs
+        training_results = [training_results_dict[config.get_run_id()] for config in run_configs]
+
+        # Execute evaluations (parallel)
+        print("\nPhase 2: Evaluation")
+        print("-" * 60)
+        
+        # Prepare evaluation tasks
+        eval_tasks = []
+        for result, config in zip(training_results, run_configs):
+            if result["status"] == "success" and result.get("run_path"):
+                eval_tasks.append((config, result["run_path"]))
+            elif result["status"] == "skipped":
+                # For skipped runs, try to find the model path from the runs directory
+                run_path = self._find_existing_run_path(config)
+                if run_path:
+                    print(f"🔍 Found existing model for skipped run: {config.get_run_id()}")
+                    
+                    # Check if model is already in the current sweep directory
+                    run_path_obj = Path(run_path).resolve()
+                    sweep_dir_obj = self.sweep_dir.resolve()
+                    
+                    if sweep_dir_obj in run_path_obj.parents:
+                        # Already in sweep directory, use as-is
+                        print(f"✓ Model already in sweep directory")
+                        eval_tasks.append((config, run_path))
+                    else:
+                        # Model is external (different sweep or main runs/), copy it
+                        print(f"📋 Copying external model to sweep directory...")
+                        organised_path = self._organise_run(run_path, config, copy_only=True)
+                        if organised_path:
+                            eval_tasks.append((config, organised_path))
+                        else:
+                            print(f"⚠️  Could not copy model, using original path")
+                            eval_tasks.append((config, run_path))
+                else:
+                    print(f"⚠️  Could not find model for skipped run: {config.get_run_id()}")
+                    evaluation_results.append(
+                        {"status": "model_not_found", "run_id": result["run_id"]}
+                    )
+            else:
+                evaluation_results.append(
+                    {
+                        "status": "skipped_due_to_training_failure",
+                        "run_id": result["run_id"],
+                    }
+                )
+        
+        # Run evaluations in parallel
+        with ProcessPoolExecutor(max_workers=self.config.max_workers) as executor:
+            future_to_task = {
+                executor.submit(self.run_evaluation, config, run_path): (config, run_path)
+                for config, run_path in eval_tasks
+            }
+            
+            for future in as_completed(future_to_task):
+                config, run_path = future_to_task[future]
+                try:
+                    eval_result = future.result()
+                    evaluation_results.append(eval_result)
+                except Exception as e:
+                    print(f"❌ Unexpected evaluation error for {config.get_run_id()}: {e}")
+                    evaluation_results.append(
+                        {
+                            "status": "error",
+                            "run_id": config.get_run_id(),
+                            "error": str(e),
+                        }
+                    )
+
+        # Save summary
+        self._save_summary(training_results, evaluation_results)
+
+        # Print final summary
+        self._print_summary(training_results, evaluation_results)
+
+    def _save_summary(self, training_results: list, evaluation_results: list):
+        """Save sweep results summary to JSON."""
+        config_dict = asdict(self.config)
+        # Convert Path objects to strings for JSON serialization
+        if config_dict.get("output_dir"):
+            config_dict["output_dir"] = str(config_dict["output_dir"])
+        
+        summary = {
+            "sweep_config": config_dict,
+            "timestamp": self.timestamp,
+            "training_results": training_results,
+            "evaluation_results": evaluation_results,
+            "statistics": {
+                "total_runs": len(training_results),
+                "successful_training": sum(
+                    1 for r in training_results if r["status"] == "success"
+                ),
+                "failed_training": sum(
+                    1 for r in training_results if r["status"] == "failed"
+                ),
+                "skipped_training": sum(
+                    1 for r in training_results if r["status"] == "skipped"
+                ),
+                "successful_evaluation": sum(
+                    1 for r in evaluation_results if r["status"] == "success"
+                ),
+            },
+        }
+
+        summary_file = self.sweep_dir / "summary.json"
+        with open(summary_file, "w") as f:
+            json.dump(summary, f, indent=2)
+
+        print(f"\n📝 Summary saved to: {summary_file}")
+
+    def _print_summary(self, training_results: list, evaluation_results: list):
+        """Print final summary statistics."""
+        print(f"\n{'='*60}")
+        print("Parameter Sweep Complete!")
+        print(f"{'='*60}")
+        print(f"Total runs: {len(training_results)}")
+        print(
+            f"Successful training: {sum(1 for r in training_results if r['status'] == 'success')}"
+        )
+        print(
+            f"Failed training: {sum(1 for r in training_results if r['status'] == 'failed')}"
+        )
+        print(
+            f"Skipped training: {sum(1 for r in training_results if r['status'] == 'skipped')}"
+        )
+        print(
+            f"Successful evaluation: {sum(1 for r in evaluation_results if r['status'] == 'success')}"
+        )
+        print(f"\nResults saved to: {self.sweep_dir}")
+        print(f"{'='*60}\n")
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Run parameter sweep for WFCRL benchmark")
-    parser.add_argument("--episode_lengths", nargs="+", type=int, default=[100],
-                       help="List of episode lengths to test")
-    parser.add_argument("--total_timesteps", nargs="+", type=int, default=[500],
-                       help="List of total timesteps to test") 
-    parser.add_argument("--base_dir", type=str, default="/home/reuben/code/wfcrl-benchmark",
-                       help="Base directory of the WFCRL benchmark")
-    parser.add_argument("--shutdown", action="store_true",
-                       help="Shutdown the computer after completing all runs")
-    parser.add_argument("--shutdown_delay", type=int, default=2,
-                       help="Minutes to wait before shutdown (default: 2)")
-    
-    args = parser.parse_args()
-    
-    # Create parameter sweep instance
-    sweep = ParameterSweep(args.base_dir)
-    
-    # Run the sweep
-    sweep.run_sweep(
-        episode_lengths=args.episode_lengths,
-        total_timesteps_list=args.total_timesteps
+# =============================================================================
+# CLI INTERFACE
+# =============================================================================
+
+
+def main(
+    algorithms: list[str] = DEFAULT_ALGORITHMS,
+    env_id: str = DEFAULT_ENV_ID,
+    episode_lengths: list[int] = DEFAULT_EPISODE_LENGTHS,
+    total_timesteps: list[int] = DEFAULT_TOTAL_TIMESTEPS,
+    seeds: list[int] = DEFAULT_SEEDS,
+    plot_power_ylim: Optional[tuple[float, float]] = DEFAULT_PLOT_POWER_YLIM,
+    plot_load_ylim: Optional[tuple[float, float]] = DEFAULT_PLOT_LOAD_YLIM,
+    eval_episode_length: int = DEFAULT_EVAL_EPISODE_LENGTH,
+    eval_seed: int = DEFAULT_EVAL_SEED,
+    max_workers: int = DEFAULT_MAX_WORKERS,
+    resume: bool = True,
+    output_dir: Optional[str] = None,
+):
+    """
+    Run a comprehensive parameter sweep for WFCRL algorithms.
+
+    Args:
+        algorithms: List of algorithms to run. Default: ippo, mappo, ifac.
+                   Options: ippo, mappo, ifac, ifppo, idqn, idrqn, qmix
+        env_id: Environment ID (e.g., Dec_Ablaincourt_Floris, Dec_Turb3_Row1_Floris)
+        episode_lengths: List of episode lengths to sweep over
+        total_timesteps: List of total timesteps to sweep over
+        seeds: List of random seeds to use
+        plot_power_ylim: Y-axis limits for power plots (min, max)
+        plot_load_ylim: Y-axis limits for load plots (min, max)
+        eval_episode_length: Episode length for evaluation
+        eval_seed: Random seed for evaluation
+        max_workers: Maximum number of parallel training processes
+        resume: Enable resume capability (skip completed runs and reuse existing models)
+        output_dir: Path to sweep directory. If exists, will RESUME that sweep.
+                   If new, creates sweep there. If None, creates new timestamped directory.
+
+    Examples:
+        # Start a new sweep (creates parameter_sweeps/<timestamp>_parameter_sweep/)
+        python parameter_sweep_v2.py --algorithms ippo mappo
+
+        # Resume an interrupted sweep (continues from progress.json)
+        python parameter_sweep_v2.py \\
+            --output_dir parameter_sweeps/10-00-00_16-10-25_parameter_sweep
+
+        # Start a new sweep in a custom location
+        python parameter_sweep_v2.py \\
+            --algorithms ippo \\
+            --output_dir my_custom_sweep
+
+        # Multiple algorithms with custom parameters
+        python parameter_sweep_v2.py --algorithms ippo mappo ifac \\
+            --env_id Dec_Turb3_Row1_Floris \\
+            --episode_lengths 100 200 300 \\
+            --total_timesteps 10000 50000 \\
+            --seeds 1 2 3 4 5
+
+        # Disable resume to force re-training even if models exist
+        python parameter_sweep_v2.py --algorithms ifppo \\
+            --resume False
+    """
+    # Validate algorithms
+    valid_algos = set(ALGORITHM_CONFIGS.keys())
+    invalid_algos = [a for a in algorithms if a not in valid_algos]
+    if invalid_algos:
+        raise ValueError(
+            f"Invalid algorithms: {invalid_algos}. Valid options: {sorted(valid_algos)}"
+        )
+
+    # Create sweep configuration
+    config = SweepConfig(
+        algorithms=algorithms,
+        env_id=env_id,
+        episode_lengths=episode_lengths,
+        total_timesteps=total_timesteps,
+        seeds=seeds,
+        plot_power_ylim=plot_power_ylim,
+        plot_load_ylim=plot_load_ylim,
+        eval_episode_length=eval_episode_length,
+        eval_seed=eval_seed,
+        max_workers=max_workers,
+        resume=resume,
+        output_dir=Path(output_dir) if output_dir else None,
     )
-    
-    # Shutdown if requested
-    if args.shutdown:
-        sweep.shutdown_system(args.shutdown_delay)
+
+    # Run the sweep
+    sweep = ParameterSweep(config)
+    sweep.run_sweep()
 
 
 if __name__ == "__main__":
-    main()
+    tyro.cli(main)
