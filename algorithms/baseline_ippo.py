@@ -197,7 +197,7 @@ if __name__ == "__main__":
     )
     args.num_agents = env.num_turbines
     args.reward_shaping = "" # reward_shaper.name
-    run_name = f"{args.env_id}__{args.exp_name}__{args.scenario}_{args.seed}__{int(time.time())}"
+    run_name = f"{args.env_id}__{args.exp_name}__seed{args.seed}__el{args.episode_length}__tt{args.total_timesteps}"
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
     # device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     args.device = device

@@ -196,7 +196,7 @@ if __name__ == "__main__":
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size
-    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
+    run_name = f"{args.env_id}__{args.exp_name}__seed{args.seed}__tt{args.total_timesteps}"
     if args.track:
         # os.environ["HTTPS_PROXY"] = "http://irsrvpxw1-std:8082"
         import wandb

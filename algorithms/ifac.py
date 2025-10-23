@@ -198,7 +198,7 @@ if __name__ == "__main__":
         reward_shaper=reward_shaper
     )
     args.num_agents = env.num_turbines
-    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
+    run_name = f"{args.env_id}__{args.exp_name}__seed{args.seed}__tt{args.total_timesteps}"
     if args.track:
         # os.environ["HTTPS_PROXY"] = "http://irsrvpxw1-std:8082"
         import wandb
