@@ -8,7 +8,12 @@
 - **Maximum Episode Length**: IPPO/MAPPO suffer with instability with longer episodes, maximum episode_length≈500
   - Above this: `/home/reuben/miniconda3/envs/wfcrl/lib/python3.11/site-packages/numpy/core/_methods.py:187: RuntimeWarning: overflow encountered in reduce
   ret = umr_sum(x, axis, dtype, out, keepdims=keepdims, where=where)`
+- **MPI Exec**: Using "mpiexec -n 1" causes an MPI error in Linux, not tested on Windows.
 
+
+## FAST.Farm
+- Uses a 100s initialisation time (set in ablaincourt databases). After this has run it then does a further num_steps*dt second simulation. (dt the simulation timestep is 3s by default)
+- **NEED TO INVESTIGATE WHAT AN APPROPRIATE SIMULATION LENGTH WOULD BE** Suggestions are that it could take 10mins for the simulation to develop properly.
 
 ## Experimental Results
 
