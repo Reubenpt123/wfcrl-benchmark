@@ -5,6 +5,7 @@ Comprehensive Parameter Sweep Script for WFCRL Benchmark
 
 import json
 import subprocess
+import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
@@ -13,86 +14,29 @@ from pathlib import Path
 from typing import Optional
 import tyro
 
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# ================================
-# DEFAULT PARAMETERS
-# ================================
-
-# Default environment configurations
-DEFAULT_ENVS = {
-    "ablaincourt": "Dec_Ablaincourt_Floris",
-    "turb3": "Dec_Turb3_Row1_Floris",
-    "ormonde": "Dec_Ormonde_Floris",
-}
-
-DEBUG = False  # Set to True to print all training/evaluation output to terminal
-
-# Default environment and algorithm selection
-DEFAULT_ENV_ID = DEFAULT_ENVS["ablaincourt"]
-DEFAULT_ALGORITHMS = ["ippo", "mappo", "idqn", "idrqn", "qmix"]
-# Options: "ippo", "mappo", "ifac", "ifppo", "idqn", "idrqn", "qmix"
-
-# Default training parameters
-DEFAULT_EPISODE_LENGTHS = [50]#, 100, 400]
-DEFAULT_TOTAL_TIMESTEPS = [500]#0, 10000, 50000, 100000]
-DEFAULT_SEEDS = [1]#, 2, 3]
-
-# Default plot parameters
-DEFAULT_PLOT_POWER_YLIM = (7.0, 9.5)  # (7,9.5) is appropriate for Ablaincourt
-DEFAULT_PLOT_LOAD_YLIM = (5.0, 8.0)   # (5,8) is appropriate for Ablaincourt
-
-# Evaluation parameters
-DEFAULT_EVAL_EPISODE_LENGTH = 1000
-DEFAULT_EVAL_SEED = 0
-
-# Parallel execution settings
-DEFAULT_MAX_WORKERS = 4
-
-# Algorithm-specific configurations
-ALGORITHM_CONFIGS = {
-    "ippo": {
-        "script": "algorithms/baseline_ippo.py",
-        "supports_plots": True,
-        "supports_episode_length": True,
-        "hidden_layer_nn": (64, 64),
-    },
-    "mappo": {
-        "script": "algorithms/baseline_mappo.py",
-        "supports_plots": True,
-        "supports_episode_length": True,
-        "hidden_layer_nn": (64, 64),
-    },
-    "ifac": {
-        "script": "algorithms/ifac.py",
-        "supports_plots": True,
-        "supports_episode_length": False,  # One continuous episode
-        "hidden_layer_nn": False,
-    },
-    "ifppo": {
-        "script": "algorithms/ifppo.py",
-        "supports_plots": True,
-        "supports_episode_length": False,  # One continuous episode
-        "hidden_layer_nn": False,
-    },
-    "idqn": {
-        "script": "algorithms/baseline_idqn.py",
-        "supports_plots": True,
-        "supports_episode_length": True,
-        "hidden_layer_nn": 64,
-    },
-    "idrqn": {
-        "script": "algorithms/baseline_idrqn.py",
-        "supports_plots": True,
-        "supports_episode_length": True,
-        "hidden_layer_nn": (64, 64),
-    },
-    "qmix": {
-        "script": "algorithms/baseline_qmix.py",
-        "supports_plots": True,
-        "supports_episode_length": True,
-        "hidden_layer_nn": 64,
-    },
-}
+# Import configuration from separate config file
+from scripts.sweep_config import (
+    ALGORITHMS,
+    ALGORITHM_CONFIGS,
+    AUTO_SHUTDOWN,
+    DEBUG,
+    ENV_ID,
+    ENVIRONMENTS,
+    EPISODE_LENGTHS,
+    EVAL_EPISODE_LENGTH,
+    EVAL_SEED,
+    EVALUATION,
+    MAX_WORKERS,
+    PLOT_LOAD_YLIM,
+    PLOT_POWER_YLIM,
+    RESUME,
+    SEEDS,
+    SHUTDOWN_DELAY_MINUTES,
+    TOTAL_TIMESTEPS,
+)
 
 
 # =============================================================================
@@ -114,7 +58,24 @@ class RunConfig:
 
     def get_run_id(self) -> str:
         """Generate unique identifier for this run."""
-        return f"{self.algorithm}_{self.env_id}_el{self.episode_length}_tt{self.total_timesteps}_s{self.seed}"
+        if ALGORITHM_CONFIGS[self.algorithm].get("supports_episode_length", True):
+            return f"{self.algorithm}_{self.env_id}_el{self.episode_length}_tt{self.total_timesteps}_s{self.seed}"
+        else:
+            return f"{self.algorithm}_{self.env_id}_tt{self.total_timesteps}_s{self.seed}"
+    
+    def get_eval_run_id(self, eval_env_id: str) -> str:
+        """Generate unique identifier for an evaluation run.
+        
+        Args:
+            eval_env_id: Environment ID used for evaluation
+        
+        Returns:
+            Unique ID that includes the evaluation environment
+        """
+        if ALGORITHM_CONFIGS[self.algorithm].get("supports_episode_length", True):
+            return f"{self.algorithm}_{self.env_id}_el{self.episode_length}_tt{self.total_timesteps}_s{self.seed}_eval_{eval_env_id}"
+        else:
+            return f"{self.algorithm}_{self.env_id}_tt{self.total_timesteps}_s{self.seed}_eval_{eval_env_id}"
 
 
 @dataclass
@@ -123,20 +84,23 @@ class SweepConfig:
 
     algorithms: list[str]
     env_id: str
-    episode_lengths: list[int] = field(default_factory=lambda: DEFAULT_EPISODE_LENGTHS)
-    total_timesteps: list[int] = field(default_factory=lambda: DEFAULT_TOTAL_TIMESTEPS)
-    seeds: list[int] = field(default_factory=lambda: DEFAULT_SEEDS)
-    plot_power_ylim: Optional[tuple[float, float]] = DEFAULT_PLOT_POWER_YLIM
-    plot_load_ylim: Optional[tuple[float, float]] = DEFAULT_PLOT_LOAD_YLIM
-    eval_episode_length: int = DEFAULT_EVAL_EPISODE_LENGTH
-    eval_seed: int = DEFAULT_EVAL_SEED
-    max_workers: int = DEFAULT_MAX_WORKERS
-    resume: bool = True
+    episode_lengths: list[int] = field(default_factory=lambda: EPISODE_LENGTHS)
+    total_timesteps: list[int] = field(default_factory=lambda: TOTAL_TIMESTEPS)
+    seeds: list[int] = field(default_factory=lambda: SEEDS)
+    plot_power_ylim: Optional[tuple[float, float]] = PLOT_POWER_YLIM
+    plot_load_ylim: Optional[tuple[float, float]] = PLOT_LOAD_YLIM
+    eval_episode_length: int = EVAL_EPISODE_LENGTH
+    eval_seed: int = EVAL_SEED
+    evaluation: str = EVALUATION
+    """Evaluation mode: "floris" (FLORIS only), "fastfarm" (FAST.Farm only), or "both" (both simulators)"""
+    max_workers: int = MAX_WORKERS
+    resume: bool = RESUME
+    """If True, skip completed runs and reuse existing models; if False, train everything from scratch"""
     output_dir: Optional[Path] = None
     debug: bool = DEBUG
-    auto_shutdown: bool = False
+    auto_shutdown: bool = AUTO_SHUTDOWN
     """Automatically shutdown the system after sweep completes"""
-    shutdown_delay_minutes: int = 5
+    shutdown_delay_minutes: int = SHUTDOWN_DELAY_MINUTES
     """Minutes to wait before shutting down (allows time to cancel if needed)"""
 
 
@@ -151,6 +115,9 @@ class ParameterSweep:
     def __init__(self, config: SweepConfig):
         self.config = config
         
+        # Convert evaluation mode to environment IDs
+        self.eval_env_ids = self._get_eval_env_ids()
+        
         # Determine sweep directory
         if config.output_dir:
             # User specified a directory - use it (for resume or custom location)
@@ -163,39 +130,81 @@ class ParameterSweep:
                 # Resuming - load the original timestamp
                 with open(existing_config, "r") as f:
                     saved_config = json.load(f)
-                    self.timestamp = saved_config.get("timestamp", datetime.now().strftime("%H-%M-%S_%d-%m-%y"))
+                    self.timestamp = saved_config.get("timestamp", datetime.now().strftime("%d-%m-%y______%H-%M-%S"))
                 print(f"📂 Resuming existing sweep from: {self.sweep_dir}")
             else:
                 # New sweep in custom directory
-                self.timestamp = datetime.now().strftime("%H-%M-%S_%d-%m-%y")
+                self.timestamp = datetime.now().strftime("%d-%m-%y______%H-%M-%S")
         else:
             # No directory specified - create new one with timestamp
-            self.timestamp = datetime.now().strftime("%H-%M-%S_%d-%m-%y")
+            self.timestamp = datetime.now().strftime("%d-%m-%y______%H-%M-%S")
             self.sweep_dir = Path("parameter_sweeps") / f"{self.timestamp}_parameter_sweep"
             self.sweep_dir.mkdir(parents=True, exist_ok=True)
 
         # Progress tracking
         self.progress_file = self.sweep_dir / "progress.json"
-        self.completed_runs = self._load_progress()
+        self.completed_runs, self.completed_evaluations = self._load_progress()
 
         # Save sweep configuration
         self._save_config()
 
-    def _load_progress(self) -> set[str]:
-        """Load completed runs from progress file."""
+    def _get_eval_env_ids(self) -> list[str]:
+        """Convert evaluation mode string to list of environment IDs.
+        
+        Returns:
+            List of environment IDs to evaluate on
+        """
+        eval_mode = self.config.evaluation.lower()
+        training_env = self.config.env_id
+        
+        # Determine the base environment name (without _Floris or _Fastfarm suffix)
+        if "_Floris" in training_env:
+            base_env = training_env.replace("_Floris", "")
+        elif "_Fastfarm" in training_env:
+            base_env = training_env.replace("_Fastfarm", "")
+        else:
+            # Assume it's a base name already
+            base_env = training_env
+        
+        # Convert evaluation mode to environment IDs
+        if eval_mode == "floris":
+            return [f"{base_env}_Floris"]
+        elif eval_mode == "fastfarm":
+            return [f"{base_env}_Fastfarm"]
+        elif eval_mode == "both":
+            return [f"{base_env}_Floris", f"{base_env}_Fastfarm"]
+        else:
+            raise ValueError(
+                f"Invalid evaluation mode: '{self.config.evaluation}'. "
+                "Must be 'floris', 'fastfarm', or 'both'"
+            )
+
+    def _load_progress(self) -> tuple[set[str], set[str]]:
+        """Load completed runs and evaluations from progress file.
+        
+        Returns:
+            Tuple of (completed_runs, completed_evaluations) as sets of run_ids
+        """
         if not self.progress_file.exists():
-            return set()
+            return set(), set()
 
         try:
             with open(self.progress_file, "r") as f:
                 data = json.load(f)
-                return set(data.get("completed_runs", []))
+                completed_runs = set(data.get("completed_runs", []))
+                completed_evaluations = set(data.get("completed_evaluations", []))
+                return completed_runs, completed_evaluations
         except (json.JSONDecodeError, IOError):
             print(f"Warning: Could not load progress from {self.progress_file}")
-            return set()
+            return set(), set()
 
-    def _save_progress(self, run_id: str):
-        """Save progress after completing a run with file locking."""
+    def _save_progress(self, run_id: str, progress_type: str = "training"):
+        """Save progress after completing a training run or evaluation with file locking.
+        
+        Args:
+            run_id: Unique identifier for the run
+            progress_type: Either "training" or "evaluation"
+        """
         import fcntl
         
         # Use a lock file to ensure atomic updates
@@ -211,22 +220,30 @@ class ParameterSweep:
                     with open(self.progress_file, "r") as f:
                         data = json.load(f)
                         completed_runs = set(data.get("completed_runs", []))
+                        completed_evaluations = set(data.get("completed_evaluations", []))
                 else:
                     completed_runs = set()
+                    completed_evaluations = set()
                 
-                # Add new run
-                completed_runs.add(run_id)
+                # Add new run or evaluation
+                if progress_type == "training":
+                    completed_runs.add(run_id)
+                    self.completed_runs = completed_runs
+                elif progress_type == "evaluation":
+                    completed_evaluations.add(run_id)
+                    self.completed_evaluations = completed_evaluations
+                else:
+                    raise ValueError(f"Invalid progress_type: {progress_type}. Must be 'training' or 'evaluation'")
                 
                 # Save updated progress
                 data = {
                     "completed_runs": list(completed_runs),
+                    "completed_evaluations": list(completed_evaluations),
                     "last_updated": datetime.now().isoformat(),
                 }
                 with open(self.progress_file, "w") as f:
                     json.dump(data, f, indent=2)
                 
-                # Update in-memory state
-                self.completed_runs = completed_runs
             finally:
                 # Lock is automatically released when the with block exits
                 pass
@@ -235,7 +252,7 @@ class ParameterSweep:
         """Save sweep configuration to JSON file."""
         config_file = self.sweep_dir / "sweep_config.json"
         config_dict = asdict(self.config)
-        # Convert Path objects to strings for JSON serialization
+        # Convert Path objects to strings for JSON serialisation
         if config_dict.get("output_dir"):
             config_dict["output_dir"] = str(config_dict["output_dir"])
         config_dict["sweep_dir"] = str(self.sweep_dir)
@@ -272,7 +289,7 @@ class ParameterSweep:
             print(f"⏭️  Skipping completed run: {run_id}")
             return {"status": "skipped", "run_id": run_id}
 
-        # Check if a model already exists in parameter_sweep directories (fully trained models only)
+        # Check if a model already exists in previous sweeps (only if resume is enabled)
         if self.config.resume:
             existing_run_path = self._find_existing_run_path(run_config)
             if existing_run_path:
@@ -395,12 +412,27 @@ class ParameterSweep:
             if result.returncode != 0:
                 error_msg = f"Training failed with exit code {result.returncode}"
                 print(f"❌ {error_msg}: {run_id}")
-                if not self.config.debug:
+                if not self.config.debug and result.stderr:
                     print(f"STDERR: {result.stderr[-500:]}")  # Last 500 chars
                 return {"status": "failed", "run_id": run_id, "error": error_msg}
 
-            # Extract run path from stdout (models saved in /runs/{run_name}/)
-            run_path = self._extract_run_path(result.stdout)
+            # Construct run path directly from known parameters
+            # Get the exp_name from the script filename (e.g., "baseline_ippo" from "algorithms/baseline_ippo.py")
+            script_path = ALGORITHM_CONFIGS[run_config.algorithm]["script"]
+            exp_name = Path(script_path).stem  # e.g., "baseline_ippo", "ifac", etc.
+            
+            if ALGORITHM_CONFIGS[run_config.algorithm].get("supports_episode_length", True):
+                run_name = f"{run_config.env_id}__{exp_name}__seed{run_config.seed}__el{run_config.episode_length}__tt{run_config.total_timesteps}"
+            else:
+                # For ifac/ifppo which don't have episode_length
+                run_name = f"{run_config.env_id}__{exp_name}__seed{run_config.seed}__tt{run_config.total_timesteps}"
+            
+            run_path = f"runs/{run_name}"
+            
+            # Verify the path exists
+            if not Path(run_path).exists():
+                print(f"⚠️  Warning: Expected run path does not exist: {run_path}")
+                run_path = None
 
             duration = time.time() - start_time
             print(f"✅ Completed training: {run_id} ({duration:.1f}s)")
@@ -424,22 +456,6 @@ class ParameterSweep:
         except Exception as e:
             print(f"❌ Training error: {run_id} - {e}")
             return {"status": "error", "run_id": run_id, "error": str(e)}
-
-    def _extract_run_path(self, stdout: str) -> Optional[str]:
-        """Extract the run path from training output."""
-        # Look for patterns like "runs/{run_name}" or "Saving to: ..."
-        for line in stdout.split("\n"):
-            if "runs/" in line:
-                # Simple heuristic - extract path containing "runs/"
-                parts = line.split()
-                for part in parts:
-                    if "runs/" in part:
-                        path = part.strip(",").strip("'").strip('"')
-                        # If path includes a filename, return just the directory
-                        if path.endswith('.cleanrl_model') or path.endswith('.pt') or path.endswith('.pth'):
-                            path = str(Path(path).parent)
-                        return path
-        return None
 
     def _organise_run(self, run_path: Optional[str], run_config: RunConfig, copy_only: bool = False) -> Optional[str]:
         """Move or copy a completed run directory into the sweep directory with a readable name.
@@ -537,30 +553,92 @@ class ParameterSweep:
                     # Additional validation: check the path contains the algorithm name
                     # to avoid picking up wrong models
                     if run_config.algorithm in str(target_path):
-                        print(f"   📂 Found model in: {target_path}")
-                        print(f"   📂 Model files: {[f.name for f in model_files[:3]]}")  # Show first 3
                         return str(target_path)
                     else:
                         print(f"   ⚠️  Skipping {target_path} - algorithm mismatch")
         
         return None
 
-    def run_evaluation(self, run_config: RunConfig, run_path: str) -> dict:
-        """Execute evaluation for a trained model."""
-        print(f"📊 Evaluating: {run_config.get_run_id()}")
+    def _check_and_copy_existing_evaluation(self, run_path: str, eval_env_id: str) -> bool:
+        """Check if evaluation already exists in the run path and is complete.
+        
+        Evaluations are stored in subdirectories like 'floris_evaluation' or 'fastfarm_evaluation'
+        within the model directory. This method checks if the evaluation exists and has results.
+        
+        Args:
+            run_path: Path to the trained model directory
+            eval_env_id: Environment ID being evaluated (e.g., Dec_Ablaincourt_Floris)
+        
+        Returns:
+            True if evaluation exists and is complete, False otherwise
+        """
+        # Determine evaluation subdirectory name based on environment
+        if "Floris" in eval_env_id:
+            eval_subdir = "floris_evaluation"
+        elif "Fastfarm" in eval_env_id:
+            eval_subdir = "fastfarm_evaluation"
+        else:
+            # Unknown environment type, can't determine subdirectory
+            return False
+        
+        eval_path = Path(run_path) / eval_subdir
+        
+        # Check if evaluation directory exists
+        if not eval_path.exists():
+            return False
+        
+        # Check for results files (windrose_scores.csv or other evaluation outputs)
+        result_files = list(eval_path.glob("*.csv")) + list(eval_path.glob("*.png"))
+        
+        if result_files:
+            print(f"   ✅ Found existing evaluation results in: {eval_path}")
+            print(f"   📊 Result files: {[f.name for f in result_files[:5]]}")  # Show first 5
+            return True
+        
+        return False
+
+    def run_evaluation(self, run_config: RunConfig, run_path: str, eval_env_id: Optional[str] = None) -> dict:
+        """Execute evaluation for a trained model.
+        
+        Args:
+            run_config: Configuration for the training run
+            run_path: Path to the trained model
+            eval_env_id: Environment ID to evaluate on (if None, uses training env_id)
+        
+        Returns:
+            Dictionary with evaluation results
+        """
+        # Use training env_id if eval_env_id not specified
+        if eval_env_id is None:
+            eval_env_id = run_config.env_id
+        
+        eval_run_id = run_config.get_eval_run_id(eval_env_id)
+        
+        print(f"📊 Evaluating: {eval_run_id}")
+        print(f"   Training env: {run_config.env_id}")
+        print(f"   Evaluation env: {eval_env_id}")
         print(f"   Using model from: {run_path}")
 
         if not run_path or not Path(run_path).exists():
             return {
                 "status": "error",
-                "run_id": run_config.get_run_id(),
+                "run_id": eval_run_id,
                 "error": "Run path not found",
+            }
+        
+        # Check if evaluation already exists in the model directory
+        if self._check_and_copy_existing_evaluation(run_path, eval_env_id):
+            print(f"   ⏭️  Using existing evaluation results")
+            # Mark as completed in progress
+            self._save_progress(eval_run_id, progress_type="evaluation")
+            return {
+                "status": "success",
+                "run_id": eval_run_id,
+                "eval_env_id": eval_env_id,
+                "reused": True,
             }
 
         cmd = [
-            "mpiexec",
-            "-n",
-            "1",
             "python",
             "algorithms/evaluate.py",
             "--seed",
@@ -568,7 +646,7 @@ class ParameterSweep:
             "--algorithm",
             run_config.algorithm,
             "--env_id",
-            run_config.env_id,
+            eval_env_id,  # Use eval environment
             "--pretrained_models",
             run_path,
             "--episode_length",
@@ -617,39 +695,59 @@ class ParameterSweep:
         try:
             # Debug: print command being executed
             if self.config.debug:
-                print(f"🐛 Debug - Eval command: {' '.join(cmd)}")
+                print(f"🐛 Debug - Evaluation command: {' '.join(cmd)}")
             
             result = subprocess.run(
                 cmd,
                 capture_output=not self.config.debug,  # Don't capture if debug (stream to terminal)
                 text=True,
-                timeout=600,  # 10 minute timeout
+                timeout=7200,  # 2 hour timeout
             )
             
             # Debug: print output
             if self.config.debug and result.stdout:
-                print(f"🐛 Debug - Eval STDOUT for {run_config.get_run_id()}:\n{result.stdout}")
+                print(f"🐛 Debug - Evaluation STDOUT for {eval_run_id}:\n{result.stdout}")
             if self.config.debug and result.stderr:
-                print(f"🐛 Debug - Eval STDERR for {run_config.get_run_id()}:\n{result.stderr}")
+                print(f"🐛 Debug - Evaluations STDERR for {eval_run_id}:\n{result.stderr}")
 
             if result.returncode != 0:
-                print(f"❌ Evaluation failed: {run_config.get_run_id()}")
-                if not self.config.debug:
+                print(f"❌ Evaluation failed: {eval_run_id}")
+                error_msg = f"Exit code {result.returncode}"
+                if not self.config.debug and result.stderr:
                     print(f"   Error: {result.stderr[-500:]}")  # Last 500 chars of stderr
+                    error_msg += f": {result.stderr[-200:]}"
                 return {
                     "status": "failed",
-                    "run_id": run_config.get_run_id(),
-                    "error": f"Exit code {result.returncode}: {result.stderr[-200:]}",
+                    "run_id": eval_run_id,
+                    "eval_env_id": eval_env_id,
+                    "error": error_msg,
                 }
 
-            print(f"✅ Evaluation complete: {run_config.get_run_id()}")
-            return {"status": "success", "run_id": run_config.get_run_id()}
+            print(f"✅ Evaluation complete: {eval_run_id}")
+            
+            # Save evaluation progress
+            self._save_progress(eval_run_id, progress_type="evaluation")
+            
+            return {
+                "status": "success",
+                "run_id": eval_run_id,
+                "eval_env_id": eval_env_id,
+            }
 
+        except subprocess.TimeoutExpired:
+            print(f"⏱️  Evaluation timeout: {eval_run_id}")
+            return {
+                "status": "failed",
+                "run_id": eval_run_id,
+                "eval_env_id": eval_env_id,
+                "error": "Evaluation timed out after 7200 seconds (2 hours)",
+            }
         except Exception as e:
-            print(f"❌ Evaluation error: {run_config.get_run_id()} - {e}")
+            print(f"❌ Evaluation error: {eval_run_id} - {e}")
             return {
                 "status": "error",
-                "run_id": run_config.get_run_id(),
+                "run_id": eval_run_id,
+                "eval_env_id": eval_env_id,
                 "error": str(e),
             }
 
@@ -713,68 +811,115 @@ class ParameterSweep:
         print("\nPhase 2: Evaluation")
         print("-" * 60)
         
+        # Determine evaluation environments
+        eval_env_ids = self.eval_env_ids
+        print(f"Evaluation mode: {self.config.evaluation}")
+        print(f"Evaluation environments: {', '.join(eval_env_ids)}")
+        
         # Prepare evaluation tasks
         eval_tasks = []
         for result, config in zip(training_results, run_configs):
+            training_run_id = config.get_run_id()
+            
+            # Get the run path (either from successful training or from finding existing model)
+            run_path = None
             if result["status"] == "success" and result.get("run_path"):
-                eval_tasks.append((config, result["run_path"]))
+                run_path = result["run_path"]
             elif result["status"] == "skipped":
-                # For skipped runs, try to find the model path from the runs directory
-                run_path = self._find_existing_run_path(config)
-                if run_path:
-                    print(f"🔍 Found existing model for skipped run: {config.get_run_id()}")
-                    
-                    # Check if model is already in the current sweep directory
-                    run_path_obj = Path(run_path).resolve()
-                    sweep_dir_obj = self.sweep_dir.resolve()
-                    
-                    if sweep_dir_obj in run_path_obj.parents:
-                        # Already in sweep directory, use as-is
-                        print(f"✓ Model already in sweep directory")
-                        eval_tasks.append((config, run_path))
-                    else:
-                        # Model is external (different sweep or main runs/), copy it
-                        print(f"📋 Copying external model to sweep directory...")
-                        organised_path = self._organise_run(run_path, config, copy_only=True)
-                        if organised_path:
-                            eval_tasks.append((config, organised_path))
+                # For skipped runs, try to find the model path (only if resume enabled)
+                if self.config.resume:
+                    run_path = self._find_existing_run_path(config)
+                    if run_path:
+                        print(f"🔍 Found existing model for skipped run: {config.get_run_id()}")
+                        
+                        # Check if model is already in the current sweep directory
+                        run_path_obj = Path(run_path).resolve()
+                        sweep_dir_obj = self.sweep_dir.resolve()
+                        
+                        if sweep_dir_obj in run_path_obj.parents:
+                            # Already in sweep directory, use as-is
+                            print(f"✓ Model already in sweep directory")
                         else:
-                            print(f"⚠️  Could not copy model, using original path")
-                            eval_tasks.append((config, run_path))
+                            # Model is external (different sweep or main runs/), copy it
+                            print(f"📋 Copying external model to sweep directory...")
+                            organised_path = self._organise_run(run_path, config, copy_only=True)
+                            if organised_path:
+                                run_path = organised_path
+                            else:
+                                print(f"⚠️  Could not copy model, using original path")
                 else:
-                    print(f"⚠️  Could not find model for skipped run: {config.get_run_id()}")
-                    evaluation_results.append(
-                        {"status": "model_not_found", "run_id": result["run_id"]}
-                    )
+                    # resume is False, don't search for external models
+                    run_path = None
+            
+            # If we have a run path, create evaluation tasks for each eval environment
+            if run_path:
+                for eval_env_id in eval_env_ids:
+                    eval_run_id = config.get_eval_run_id(eval_env_id)
+                    
+                    # Check if this specific evaluation already completed (in progress.json)
+                    if self.config.resume and eval_run_id in self.completed_evaluations:
+                        print(f"⏭️  Skipping completed evaluation: {eval_run_id}")
+                        evaluation_results.append({
+                            "status": "skipped",
+                            "run_id": eval_run_id,
+                            "eval_env_id": eval_env_id,
+                        })
+                        continue
+                    
+                    # Check if evaluation already exists in the model directory
+                    if self.config.resume and self._check_and_copy_existing_evaluation(run_path, eval_env_id):
+                        print(f"⏭️  Found existing evaluation, marking as complete: {eval_run_id}")
+                        self._save_progress(eval_run_id, progress_type="evaluation")
+                        evaluation_results.append({
+                            "status": "success",
+                            "run_id": eval_run_id,
+                            "eval_env_id": eval_env_id,
+                            "reused": True,
+                        })
+                        continue
+                    
+                    # Add to evaluation tasks
+                    eval_tasks.append((config, run_path, eval_env_id))
             else:
-                evaluation_results.append(
-                    {
-                        "status": "skipped_due_to_training_failure",
-                        "run_id": result["run_id"],
-                    }
-                )
+                # No model found
+                if result["status"] == "skipped":
+                    print(f"⚠️  Could not find model for skipped run: {training_run_id}")
+                    for eval_env_id in eval_env_ids:
+                        evaluation_results.append({
+                            "status": "model_not_found",
+                            "run_id": config.get_eval_run_id(eval_env_id),
+                            "eval_env_id": eval_env_id,
+                        })
+                else:
+                    # Training failed
+                    for eval_env_id in eval_env_ids:
+                        evaluation_results.append({
+                            "status": "skipped_due_to_training_failure",
+                            "run_id": config.get_eval_run_id(eval_env_id),
+                            "eval_env_id": eval_env_id,
+                        })
         
         # Run evaluations in parallel
         with ProcessPoolExecutor(max_workers=self.config.max_workers) as executor:
             future_to_task = {
-                executor.submit(self.run_evaluation, config, run_path): (config, run_path)
-                for config, run_path in eval_tasks
+                executor.submit(self.run_evaluation, config, run_path, eval_env_id): (config, run_path, eval_env_id)
+                for config, run_path, eval_env_id in eval_tasks
             }
             
             for future in as_completed(future_to_task):
-                config, run_path = future_to_task[future]
+                config, run_path, eval_env_id = future_to_task[future]
                 try:
                     eval_result = future.result()
                     evaluation_results.append(eval_result)
                 except Exception as e:
-                    print(f"❌ Unexpected evaluation error for {config.get_run_id()}: {e}")
-                    evaluation_results.append(
-                        {
-                            "status": "error",
-                            "run_id": config.get_run_id(),
-                            "error": str(e),
-                        }
-                    )
+                    eval_run_id = config.get_eval_run_id(eval_env_id)
+                    print(f"❌ Unexpected evaluation error for {eval_run_id}: {e}")
+                    evaluation_results.append({
+                        "status": "error",
+                        "run_id": eval_run_id,
+                        "eval_env_id": eval_env_id,
+                        "error": str(e),
+                    })
 
         # Save summary
         self._save_summary(training_results, evaluation_results)
@@ -804,13 +949,19 @@ class ParameterSweep:
                     1 for r in training_results if r["status"] == "success"
                 ),
                 "failed_training": sum(
-                    1 for r in training_results if r["status"] == "failed"
+                    1 for r in training_results if r["status"] in ["failed", "error"]
                 ),
                 "skipped_training": sum(
                     1 for r in training_results if r["status"] == "skipped"
                 ),
                 "successful_evaluation": sum(
                     1 for r in evaluation_results if r["status"] == "success"
+                ),
+                "skipped_evaluation": sum(
+                    1 for r in evaluation_results if r["status"] == "skipped"
+                ),
+                "failed_evaluation": sum(
+                    1 for r in evaluation_results if r["status"] in ["failed", "error"]
                 ),
             },
         }
@@ -831,13 +982,19 @@ class ParameterSweep:
             f"Successful training: {sum(1 for r in training_results if r['status'] == 'success')}"
         )
         print(
-            f"Failed training: {sum(1 for r in training_results if r['status'] == 'failed')}"
+            f"Failed training: {sum(1 for r in training_results if r['status'] in ['failed', 'error'])}"
         )
         print(
             f"Skipped training: {sum(1 for r in training_results if r['status'] == 'skipped')}"
         )
         print(
             f"Successful evaluation: {sum(1 for r in evaluation_results if r['status'] == 'success')}"
+        )
+        print(
+            f"Skipped evaluation: {sum(1 for r in evaluation_results if r['status'] == 'skipped')}"
+        )
+        print(
+            f"Failed evaluation: {sum(1 for r in evaluation_results if r['status'] in ['failed', 'error'])}"
         )
         print(f"\nResults saved to: {self.sweep_dir}")
         print(f"{'='*60}\n")
@@ -877,20 +1034,21 @@ class ParameterSweep:
 
 
 def main(
-    algorithms: list[str] = DEFAULT_ALGORITHMS,
-    env_id: str = DEFAULT_ENV_ID,
-    episode_lengths: list[int] = DEFAULT_EPISODE_LENGTHS,
-    total_timesteps: list[int] = DEFAULT_TOTAL_TIMESTEPS,
-    seeds: list[int] = DEFAULT_SEEDS,
-    plot_power_ylim: Optional[tuple[float, float]] = DEFAULT_PLOT_POWER_YLIM,
-    plot_load_ylim: Optional[tuple[float, float]] = DEFAULT_PLOT_LOAD_YLIM,
-    eval_episode_length: int = DEFAULT_EVAL_EPISODE_LENGTH,
-    eval_seed: int = DEFAULT_EVAL_SEED,
-    max_workers: int = DEFAULT_MAX_WORKERS,
-    resume: bool = True,
+    algorithms: list[str] = ALGORITHMS,
+    env_id: str = ENV_ID,
+    episode_lengths: list[int] = EPISODE_LENGTHS,
+    total_timesteps: list[int] = TOTAL_TIMESTEPS,
+    seeds: list[int] = SEEDS,
+    plot_power_ylim: Optional[tuple[float, float]] = PLOT_POWER_YLIM,
+    plot_load_ylim: Optional[tuple[float, float]] = PLOT_LOAD_YLIM,
+    eval_episode_length: int = EVAL_EPISODE_LENGTH,
+    eval_seed: int = EVAL_SEED,
+    evaluation: str = EVALUATION,
+    max_workers: int = MAX_WORKERS,
+    resume: bool = RESUME,
     output_dir: Optional[str] = None,
-    auto_shutdown: bool = False,
-    shutdown_delay_minutes: int = 5,
+    auto_shutdown: bool = AUTO_SHUTDOWN,
+    shutdown_delay_minutes: int = SHUTDOWN_DELAY_MINUTES,
 ):
     """
     Run a comprehensive parameter sweep for WFCRL algorithms.
@@ -898,7 +1056,7 @@ def main(
     Args:
         algorithms: List of algorithms to run. Default: ippo, mappo, ifac.
                    Options: ippo, mappo, ifac, ifppo, idqn, idrqn, qmix
-        env_id: Environment ID (e.g., Dec_Ablaincourt_Floris, Dec_Turb3_Row1_Floris)
+        env_id: Environment ID for training (e.g., Dec_Ablaincourt_Floris, Dec_Turb3_Row1_Floris)
         episode_lengths: List of episode lengths to sweep over
         total_timesteps: List of total timesteps to sweep over
         seeds: List of random seeds to use
@@ -906,8 +1064,12 @@ def main(
         plot_load_ylim: Y-axis limits for load plots (min, max)
         eval_episode_length: Episode length for evaluation
         eval_seed: Random seed for evaluation
+        evaluation: Evaluation mode - "floris" (FLORIS only), "fastfarm" (FAST.Farm only), 
+                   or "both" (evaluate on both simulators). Default: "floris"
         max_workers: Maximum number of parallel training processes
-        resume: Enable resume capability (skip completed runs and reuse existing models)
+        resume: If True, skip completed runs in progress.json and reuse existing models from 
+                previous sweeps. If False, train everything from scratch (ignore progress.json 
+                and don't search for existing models).
         output_dir: Path to sweep directory. If exists, will RESUME that sweep.
                    If new, creates sweep there. If None, creates new timestamped directory.
         auto_shutdown: Automatically shutdown the system after sweep completes (default: False)
@@ -916,6 +1078,18 @@ def main(
     Examples:
         # Start a new sweep (creates parameter_sweeps/<timestamp>_parameter_sweep/)
         python parameter_sweep_v2.py --algorithms ippo mappo
+
+        # Cross-simulator evaluation (train on FLORIS, evaluate on both FLORIS and FAST.Farm)
+        python parameter_sweep_v2.py \\
+            --algorithms ippo \\
+            --env_id Dec_Ablaincourt_Floris \\
+            --evaluation both
+        
+        # Train on FLORIS, evaluate only on FAST.Farm
+        python parameter_sweep_v2.py \\
+            --algorithms ippo \\
+            --env_id Dec_Ablaincourt_Floris \\
+            --evaluation fastfarm
 
         # Resume an interrupted sweep (continues from progress.json)
         python parameter_sweep_v2.py \\
@@ -955,6 +1129,12 @@ def main(
             f"Invalid algorithms: {invalid_algos}. Valid options: {sorted(valid_algos)}"
         )
 
+    # Validate evaluation mode
+    if evaluation.lower() not in ["floris", "fastfarm", "both"]:
+        raise ValueError(
+            f"Invalid evaluation mode: '{evaluation}'. Must be 'floris', 'fastfarm', or 'both'"
+        )
+    
     # Create sweep configuration
     config = SweepConfig(
         algorithms=algorithms,
@@ -966,6 +1146,7 @@ def main(
         plot_load_ylim=plot_load_ylim,
         eval_episode_length=eval_episode_length,
         eval_seed=eval_seed,
+        evaluation=evaluation,
         max_workers=max_workers,
         resume=resume,
         output_dir=Path(output_dir) if output_dir else None,
