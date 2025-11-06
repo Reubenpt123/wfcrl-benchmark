@@ -14,8 +14,12 @@ from pathlib import Path
 from typing import Optional
 import tyro
 
+# Get script directory and project root
+SCRIPT_DIR = Path(__file__).parent.resolve()
+PROJECT_ROOT = SCRIPT_DIR.parent.resolve()
+
 # Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 # Import configuration from separate config file
 from scripts.sweep_config import (
@@ -138,7 +142,7 @@ class ParameterSweep:
         else:
             # No directory specified - create new one with timestamp
             self.timestamp = datetime.now().strftime("%d-%m-%y______%H-%M-%S")
-            self.sweep_dir = Path("parameter_sweeps") / f"{self.timestamp}_parameter_sweep"
+            self.sweep_dir = PROJECT_ROOT / "parameter_sweeps" / f"{self.timestamp}_parameter_sweep"
             self.sweep_dir.mkdir(parents=True, exist_ok=True)
 
         # Progress tracking
@@ -333,7 +337,7 @@ class ParameterSweep:
                 "error": f"Unknown algorithm: {run_config.algorithm}",
             }
 
-        script_path = Path(algo_config["script"])
+        script_path = PROJECT_ROOT / algo_config["script"]
         if not script_path.exists():
             return {
                 "status": "error",
@@ -427,12 +431,14 @@ class ParameterSweep:
                 # For ifac/ifppo which don't have episode_length
                 run_name = f"{run_config.env_id}__{exp_name}__seed{run_config.seed}__tt{run_config.total_timesteps}"
             
-            run_path = f"runs/{run_name}"
+            run_path = PROJECT_ROOT / "runs" / run_name
             
             # Verify the path exists
-            if not Path(run_path).exists():
+            if not run_path.exists():
                 print(f"⚠️  Warning: Expected run path does not exist: {run_path}")
                 run_path = None
+            else:
+                run_path = str(run_path)
 
             duration = time.time() - start_time
             print(f"✅ Completed training: {run_id} ({duration:.1f}s)")
@@ -534,7 +540,7 @@ class ParameterSweep:
         )
         
         # Search pattern: parameter_sweeps/{*}/runs/{algorithm}/{target_dir_name}
-        parameter_sweeps_dir = Path("parameter_sweeps")
+        parameter_sweeps_dir = PROJECT_ROOT / "parameter_sweeps"
         if not parameter_sweeps_dir.exists():
             return None
         
@@ -640,7 +646,7 @@ class ParameterSweep:
 
         cmd = [
             "python",
-            "algorithms/evaluate.py",
+            str(PROJECT_ROOT / "algorithms" / "evaluate.py"),
             "--seed",
             str(self.config.eval_seed),
             "--algorithm",

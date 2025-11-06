@@ -19,12 +19,12 @@ ENVIRONMENTS = {
 
 # Environment and algorithm selection
 ENV_ID = ENVIRONMENTS["ablaincourt"]
-ALGORITHMS = ["ippo", "ifppo"]
+ALGORITHMS = ["ifppo"] #, "ifppo"]
 # Options: "ippo", "mappo", "ifac", "ifppo", "idqn", "idrqn", "qmix"
 
 # Training parameters
 EPISODE_LENGTHS = [100]  # [50, 100, 400]
-TOTAL_TIMESTEPS = [100000]  # [3000, 10000, 50000, 100000]
+TOTAL_TIMESTEPS = [30000]  # [3000, 10000, 50000, 100000]
 SEEDS = [1]  # [1, 2, 3]
 
 # Plot parameters
@@ -36,15 +36,15 @@ PLOT_LOAD_YLIM = (5.0, 8.0)   # (5,8) is appropriate for Ablaincourt
 # ================================
 
 EVAL_EPISODE_LENGTH = 1000
-EVAL_SEED = 0
+EVAL_SEED = 1
 EVALUATION = "both"  # Options: "floris", "fastfarm", "both"
 
 # ================================
 # EXECUTION SETTINGS
 # ================================
 
-MAX_WORKERS = 1
-RESUME = True  # If True, skip completed runs and reuse existing models; if False, train from scratch
+MAX_WORKERS = 2
+RESUME = False  # If True, skip completed runs and reuse existing models; if False, train from scratch
 DEBUG = True  # Set to True to print all training/evaluation output to terminal
 AUTO_SHUTDOWN = False # If True, shut down machine after sweep completion
 SHUTDOWN_DELAY_MINUTES = 5  # Minutes to wait before shutting down

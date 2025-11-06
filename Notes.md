@@ -19,6 +19,8 @@
 
 ### Performance Comparison (Episode lengths [50,200,600], Iterations [10 000, 50 000, 100 000])
 
+Found that using a yaw of 0.5 gives poor performance. +-30, 1 deg is good.
+
 #### Poor Performers
 - **IDQN**: Very poor performance, regardless of episode length or iterations the yaws go to the extremes.
 - **IDRQN**: Really bad performance
