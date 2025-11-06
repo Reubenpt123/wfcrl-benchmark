@@ -134,14 +134,14 @@ class ParameterSweep:
                 # Resuming - load the original timestamp
                 with open(existing_config, "r") as f:
                     saved_config = json.load(f)
-                    self.timestamp = saved_config.get("timestamp", datetime.now().strftime("%d-%m-%y______%H-%M-%S"))
+                    self.timestamp = saved_config.get("timestamp", datetime.now().strftime("%d-%m-%y______%H-%M-%S______"))
                 print(f"📂 Resuming existing sweep from: {self.sweep_dir}")
             else:
                 # New sweep in custom directory
-                self.timestamp = datetime.now().strftime("%d-%m-%y______%H-%M-%S")
+                self.timestamp = datetime.now().strftime("%d-%m-%y______%H-%M-%S______")
         else:
             # No directory specified - create new one with timestamp
-            self.timestamp = datetime.now().strftime("%d-%m-%y______%H-%M-%S")
+            self.timestamp = datetime.now().strftime("%d-%m-%y______%H-%M-%S______")
             self.sweep_dir = PROJECT_ROOT / "parameter_sweeps" / f"{self.timestamp}_parameter_sweep"
             self.sweep_dir.mkdir(parents=True, exist_ok=True)
 
