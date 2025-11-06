@@ -3,10 +3,14 @@ import random
 import time
 from dataclasses import dataclass
 from typing import Union
+from pathlib import Path
 
 import gymnasium as gym
 import numpy as np
 import torch
+
+# Get project root directory
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
@@ -40,6 +44,8 @@ class Args:
     """the entity (team) of wandb's project"""
     save_model: bool = False
     """whether to save model into the `runs/{run_name}` folder"""
+    vtk_wind: bool = True
+    """whether to generate vtk wind outputs or not"""
 
     # Algorithm specific arguments
     env_id: str = "Dec_Turb3_Row1_Floris"
@@ -190,7 +196,8 @@ if __name__ == "__main__":
         args.env_id,
         controls=controls, 
         max_num_steps=args.total_timesteps, 
-        reward_shaper=FilteredStep(threshold=args.reward_tol)
+        reward_shaper=FilteredStep(threshold=args.reward_tol,
+        vtk_wind=args.vtk_wind)
     )
     args.num_agents = env.num_turbines
     args.batch_size = int(args.num_envs * args.num_steps)
@@ -430,11 +437,13 @@ if __name__ == "__main__":
                           power_ylim=power_ylim, load_ylim=load_ylim,
                           total_timesteps=args.total_timesteps, episode_length=None,
                           seed=args.seed)
-    fig.savefig(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}/plot.png")
+    fig.savefig(str(PROJECT_ROOT / "runs" / run_name / "plot.png"))
 
     # Save the run name for batch scripts to find it
-    with open("/home/reuben/code/wfcrl-benchmark/scripts/most_recent_models/ifppo_path.txt", "w") as file:
-        file.write(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}")
+    most_recent_path = PROJECT_ROOT / "scripts" / "most_recent_models" / "ifppo_path.txt"
+    most_recent_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
+    with open(most_recent_path, "w") as file:
+        file.write(str(PROJECT_ROOT / "runs" / run_name))
 
 
 

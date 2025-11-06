@@ -3,10 +3,14 @@ import random
 import time
 from dataclasses import dataclass
 from typing import Union
+from pathlib import Path
 
 import gymnasium as gym
 import numpy as np
 import torch
+
+# Get project root directory
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
@@ -40,6 +44,8 @@ class Args:
     """the entity (team) of wandb's project"""
     save_model: bool = True
     """whether to save model into the `runs/{run_name}` folder"""
+    vtk_wind: bool = False
+    """whether to generate vtk wind outputs or not"""
 
     # Algorithm specific arguments
     env_id: str = "Dec_Turb3_Row1_Floris" #""Turb32_Row5_Floris
@@ -66,7 +72,7 @@ class Args:
     """Path to pretrained models"""
     reward_tol: float = 0.00005
     """Tolerance threshold for reward function"""
-    action_bound: float = 0.5
+    action_bound: float = 1
     """Bounds on the step size"""
     kl_coef:  float = 0.0
     """Weighing coefficient for KL term in loss """ 
@@ -195,7 +201,8 @@ if __name__ == "__main__":
         args.env_id,
         controls=controls, 
         max_num_steps=args.total_timesteps, 
-        reward_shaper=reward_shaper
+        reward_shaper=reward_shaper,
+        vtk_wind=args.vtk_wind
     )
     args.num_agents = env.num_turbines
     run_name = f"{args.env_id}__{args.exp_name}__seed{args.seed}__tt{args.total_timesteps}"
@@ -255,7 +262,7 @@ if __name__ == "__main__":
     global_step = 0
     start_time = time.time()
     # set single wind conditions for reproducibility
-    env.reset(options={"wind_speed": 8, "wind_direction": 270})
+    env.reset(options={"wind_speed": 8, "wind_direction": 270, "vtk_wind": True})
     last_progress_pct = -1  # Track last displayed progress percentage
 
     for step in range(1, args.total_timesteps):
@@ -364,8 +371,10 @@ if __name__ == "__main__":
                           power_ylim=power_ylim, load_ylim=load_ylim,
                           total_timesteps=args.total_timesteps, episode_length=None,
                           seed=args.seed)
-    fig.savefig(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}/plot.png")
+    fig.savefig(str(PROJECT_ROOT / "runs" / run_name / "plot.png"))
 
     # Save the run name for batch scripts to find it
-    with open("/home/reuben/code/wfcrl-benchmark/scripts/most_recent_models/ifac_path.txt", "w") as file:
-        file.write(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}")
+    most_recent_path = PROJECT_ROOT / "scripts" / "most_recent_models" / "ifac_path.txt"
+    most_recent_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
+    with open(most_recent_path, "w") as file:
+        file.write(str(PROJECT_ROOT / "runs" / run_name))

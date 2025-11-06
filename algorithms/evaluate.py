@@ -9,6 +9,9 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import torch
+
+# Get project root directory
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 import tyro
 
 
@@ -91,7 +94,7 @@ class Args:
     """coefficient of the load penalty"""
     episode_length: int = 1000
     """size of trajectory to store in buffer"""
-    wind_data: str = "/home/reuben/code/wfcrl-benchmark/data/smarteole.csv"
+    wind_data: str = str(PROJECT_ROOT / "data" / "smarteole.csv")
     """Path to wind data for wind rose evaluation"""
     env_id: str = ""
     """the id of the environment"""
@@ -132,8 +135,8 @@ if __name__ == "__main__":
     # Match training script control specification exactly
     algorithm = args.algorithm
     assert algorithm in ["ippo", "mappo", "idqn", "idrqn", "qmix", "ifac", "ifppo"]
-    controls = {"yaw": (-30, 30, 0.5)}  # Discrete control with specific bounds
-    
+    controls = {"yaw": (-30, 30, 1)}  # Discrete control with specific bounds
+    #controls = {"yaw"}
     env = envs.make(
         args.env_id,
         controls=controls, 

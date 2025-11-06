@@ -9,6 +9,9 @@ import gymnasium as gym
 import numpy as np
 from pathlib import Path
 import torch
+
+# Get project root directory
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
@@ -50,8 +53,8 @@ class Args:
     wandb_entity: str = ""
     """the entity (team) of wandb's project"""
     save_model: bool = True
-    """whether to save model into the `/home/reuben/code/wfcrl-benchmark/runs/{run_name}` folder"""
-    wind_data: str = "/home/reuben/code/wfcrl-benchmark/data/smarteole.csv"
+    """whether to save model into the `runs/{run_name}` folder"""
+    wind_data: str = str(PROJECT_ROOT / "data" / "smarteole.csv")
     """Path to wind data for wind rose evaluation"""
     episode_length: int = 150
     """size of a trajectory to store in buffer"""
@@ -63,15 +66,15 @@ class Args:
     """the id of the environment"""
     total_timesteps: int = int(1e5)
     """total timesteps of the experiments"""
-    learning_rate: float = 3e-4 #7e-4 #
+    learning_rate: float = 1e-3#3e-4 #7e-4 #
     """the learning rate of the optimiser"""
     gamma: float = 0.99
     """the discount factor gamma"""
     gae_lambda: float = 0.95 #0
     """the lambda for the general advantage estimation"""
-    num_minibatches: int = 8
+    num_minibatches: int = 32
     """the number of mini-batches"""
-    update_epochs: int = 4
+    update_epochs: int = 10
     """the K epochs to update the policy"""
     norm_adv: bool = True
     """Toggles advantages normalisation"""
@@ -79,7 +82,7 @@ class Args:
     """the surrogate clipping coefficient"""
     clip_vloss: bool = True
     """Toggles whether or not to use a clipped loss for the value function, as per the paper."""
-    ent_coef: float = 0.0 #0
+    ent_coef: float = 0.01 #0
     """coefficient of the entropy"""
     vf_coef: float = 0.5
     """coefficient of the value function"""
@@ -95,11 +98,11 @@ class Args:
     """Type of policy"""
     hidden_layer_nn: Union[bool, tuple[int, ...]] = (64, 64)
     """number of neurons in hidden layer"""
-    batch_size: int = 512
+    batch_size: int = 2048
     """number of steps to collect before update (batch size for training)"""
     anneal_lr: bool = True
     """Toggle learning rate annealing for policy and value networks"""
-    freq_eval: int = 20
+    freq_eval: int = 5
     """Number of iterations between eval"""
     plot_power_ylim: Union[bool, tuple[float, float]] = False
     """Optional y-axis limits for power plot as (ymin, ymax)"""
@@ -185,6 +188,7 @@ class Agent(nn.Module):
 if __name__ == "__main__":
     args = tyro.cli(Args)
     controls = {'yaw': (-30, 30, 0.5)}  # Limit yaw angles to ±30 degrees (low, high, step)
+    #controls = {'yaw'}
     assert args.scenario in ["constant", "windrose"]
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size
@@ -206,7 +210,7 @@ if __name__ == "__main__":
         import wandb
         load_dotenv()
         wandb.login(key=os.environ["WANDB_API_KEY"])
-        wandb.tensorboard.patch(root_logdir=f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}", pytorch=False, tensorboard_x=False, save=False)
+        wandb.tensorboard.patch(root_logdir=str(PROJECT_ROOT / "runs" / run_name), pytorch=False, tensorboard_x=False, save=False)
         wandb.init(
             project=args.wandb_project_name,
             entity=args.wandb_entity,
@@ -216,9 +220,9 @@ if __name__ == "__main__":
             monitor_gym=True,
             save_code=True,
         )
-    writer = LocalSummaryWriter(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}")
+    writer = LocalSummaryWriter(str(PROJECT_ROOT / "runs" / run_name))
     writer.add_config(vars(args))
-    model_path = f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}/{args.exp_name}.cleanrl_model"
+    model_path = str(PROJECT_ROOT / "runs" / run_name / f"{args.exp_name}.cleanrl_model")
     # TRY NOT TO MODIFY
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -506,9 +510,11 @@ if __name__ == "__main__":
                           power_ylim=power_ylim, load_ylim=load_ylim,
                           total_timesteps=args.total_timesteps, episode_length=args.episode_length,
                           seed=args.seed)
-    fig.savefig(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}/plot.png")
+    fig.savefig(str(PROJECT_ROOT / "runs" / run_name / "plot.png"))
     eval_env.close()
 
     # Save the run name for batch scripts to find it
-    with open("/home/reuben/code/wfcrl-benchmark/scripts/most_recent_models/ippo_path.txt", "w") as file:
-        file.write(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}")
+    most_recent_path = PROJECT_ROOT / "scripts" / "most_recent_models" / "ippo_path.txt"
+    most_recent_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
+    with open(most_recent_path, "w") as file:
+        file.write(str(PROJECT_ROOT / "runs" / run_name))

@@ -9,6 +9,9 @@ import gymnasium as gym
 import numpy as np
 from pathlib import Path
 import torch
+
+# Get project root directory
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
@@ -54,7 +57,7 @@ class Args:
     """whether to save model into the `runs/{run_name}` folder"""
     freq_eval: int = 50
     """Number of iterations between eval"""
-    wind_data: str = "/home/reuben/code/wfcrl-benchmark/data/smarteole.csv"
+    wind_data: str = str(PROJECT_ROOT / "data" / "smarteole.csv")
     """Path to wind data for wind rose evaluation"""
     load_coef: float = 1
     """coefficient of the load penalty"""
@@ -155,7 +158,7 @@ def get_deterministic_action(q_network, observation, last_action):
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    controls = {"yaw": (-30, 30, 0.5)}  # min, max, step_size
+    controls = {"yaw": (-30, 30, 1)}  # min, max, step_size
     env = envs.make(
         args.env_id,
         controls=controls, 
@@ -174,7 +177,7 @@ if __name__ == "__main__":
         import wandb
         load_dotenv()
         wandb.login(key=os.environ["WANDB_API_KEY"])
-        wandb.tensorboard.patch(root_logdir=f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}", pytorch=False, tensorboard_x=False, save=False)
+        wandb.tensorboard.patch(root_logdir=str(PROJECT_ROOT / "runs" / run_name), pytorch=False, tensorboard_x=False, save=False)
         wandb.init(
             project=args.wandb_project_name,
             entity=args.wandb_entity,
@@ -184,9 +187,9 @@ if __name__ == "__main__":
             monitor_gym=True,
             save_code=True,
         )
-    writer = LocalSummaryWriter(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}", )
+    writer = LocalSummaryWriter(str(PROJECT_ROOT / "runs" / run_name), )
     writer.add_config(vars(args))
-    model_path = f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}/{args.exp_name}.cleanrl_model"
+    model_path = str(PROJECT_ROOT / "runs" / run_name / f"{args.exp_name}.cleanrl_model")
     # TRY NOT TO MODIFY
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -401,13 +404,15 @@ if __name__ == "__main__":
     # Prepare plots from the complete evaluation episode
     power_ylim = args.plot_power_ylim if args.plot_power_ylim else None
     load_ylim = args.plot_load_ylim if args.plot_load_ylim else None
-    fig = plot_env_history(eval_env, env_name=args.env_id, algorithm="idqn",
+    fig = plot_env_history(eval_env, env_name=args.env_id, algorithm="idqn", 
                           power_ylim=power_ylim, load_ylim=load_ylim,
                           total_timesteps=args.total_timesteps, episode_length=args.episode_length,
                           seed=args.seed)
-    fig.savefig(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}/plot.png")
+    fig.savefig(str(PROJECT_ROOT / "runs" / run_name / "plot.png"))
     eval_env.close()
 
     # Save the run name for batch scripts to find it
-    with open("/home/reuben/code/wfcrl-benchmark/scripts/most_recent_models/idqn_path.txt", "w") as file:
-        file.write(f"/home/reuben/code/wfcrl-benchmark/runs/{run_name}")
+    most_recent_path = PROJECT_ROOT / "scripts" / "most_recent_models" / "idqn_path.txt"
+    most_recent_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
+    with open(most_recent_path, "w") as file:
+        file.write(str(PROJECT_ROOT / "runs" / run_name))
