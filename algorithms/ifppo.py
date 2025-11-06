@@ -84,7 +84,7 @@ class Args:
     """Path to pretrained models"""
     reward_tol: float = 0.00005
     """Tolerance threshold for reward function"""
-    action_bound: float = 0.5
+    action_bound: float = 1
     """Bounds on the step size"""
     kl_coef:  float = 0.0
     """Weighing coefficient for KL term in loss """ 

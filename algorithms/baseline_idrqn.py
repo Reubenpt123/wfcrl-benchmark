@@ -152,7 +152,7 @@ def linear_schedule(start_e: float, end_e: float, duration: int, t: int):
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    controls = {"yaw": (-30, 30, 0.5)}  # min, max, step_size
+    controls = {"yaw": (-30, 30, 1)}  # min, max, step_size
     assert args.scenario in ["constant", "windrose"]
     env = envs.make(
         args.env_id,

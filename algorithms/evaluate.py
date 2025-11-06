@@ -136,7 +136,6 @@ if __name__ == "__main__":
     algorithm = args.algorithm
     assert algorithm in ["ippo", "mappo", "idqn", "idrqn", "qmix", "ifac", "ifppo"]
     controls = {"yaw": (-30, 30, 1)}  # Discrete control with specific bounds
-    #controls = {"yaw"}
     env = envs.make(
         args.env_id,
         controls=controls, 

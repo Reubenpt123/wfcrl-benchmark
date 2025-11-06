@@ -183,7 +183,7 @@ class Agent(nn.Module):
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    controls = {'yaw': (-30, 30, 0.5)}  # Limit yaw angles to ±30 degrees (low, high, step)
+    controls = {'yaw': (-30, 30, 1)}  # Limit yaw angles to ±30 degrees (low, high, step)
     assert args.scenario in ["constant", "windrose"]
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size
