@@ -196,8 +196,8 @@ if __name__ == "__main__":
         args.env_id,
         controls=controls, 
         max_num_steps=args.total_timesteps, 
-        reward_shaper=FilteredStep(threshold=args.reward_tol,
-        vtk_wind=args.vtk_wind)
+        reward_shaper=FilteredStep(threshold=args.reward_tol),
+        vtk_wind=args.vtk_wind
     )
     args.num_agents = env.num_turbines
     args.batch_size = int(args.num_envs * args.num_steps)
