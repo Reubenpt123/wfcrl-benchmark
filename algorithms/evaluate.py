@@ -94,6 +94,10 @@ class Args:
     """coefficient of the load penalty"""
     episode_length: int = 1000
     """size of trajectory to store in buffer"""
+    wind_speed: float = 8
+    """initial wind speed in m/s"""
+    wind_direction: float = 270
+    """wind direction in meteorological convention (0° = North, 270° = West)"""
     wind_data: str = str(PROJECT_ROOT / "data" / "smarteole.csv")
     """Path to wind data for wind rose evaluation"""
     env_id: str = ""
@@ -142,6 +146,8 @@ if __name__ == "__main__":
         max_num_steps=args.episode_length,
         load_coef=args.load_coef,
         continuous_control=algorithm in ["mappo", "ippo", "ifac", "ifppo"],
+        wind_speed=args.wind_speed,
+        wind_direction=args.wind_direction
     )
     args.num_agents = env.num_turbines
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"

@@ -61,6 +61,10 @@ class Args:
     """coefficient of the load penalty"""
     episode_length: int = 150
     """size of a trajectory to store in buffer"""
+    wind_speed: float = 8
+    """initial wind speed in m/s"""
+    wind_direction: float = 270
+    """wind direction in meteorological convention (0° = North, 270° = West)"""
 
     # Algorithm specific arguments
     env_id: str = "Dec_Turb3_Row1_Floris"
@@ -192,7 +196,9 @@ if __name__ == "__main__":
         args.env_id,
         controls=controls, 
         max_num_steps=args.episode_length,
-        load_coef=args.load_coef
+        load_coef=args.load_coef,
+        wind_speed=args.wind_speed,
+        wind_direction=args.wind_direction
     )
     args.num_agents = env.num_turbines
     args.reward_shaping = ""
@@ -497,7 +503,9 @@ if __name__ == "__main__":
         args.env_id,
         controls=controls, 
         max_num_steps=args.episode_length,
-        load_coef=args.load_coef
+        load_coef=args.load_coef,
+        wind_speed=args.wind_speed,
+        wind_direction=args.wind_direction
     )
     
     if windrose_eval:

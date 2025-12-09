@@ -97,8 +97,8 @@ class FourierExtractor(nn.Module):
             hyper_network_class: torch.nn.Module = None, 
             fourier_hyper_arch: Iterable[int] = None
         ):
-        assert (isinstance(observation_space, gym.spaces.Box), 
-            "Use Fourier extractor with continuous observation spaces")
+        assert isinstance(observation_space, gym.spaces.Box), \
+            "Use Fourier extractor with continuous observation spaces"
         super().__init__()
         
         self._observation_space = observation_space

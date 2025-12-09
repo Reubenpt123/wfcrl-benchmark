@@ -46,6 +46,10 @@ class Args:
     """whether to save model into the `runs/{run_name}` folder"""
     vtk_wind: bool = False
     """whether to generate vtk wind outputs or not"""
+    wind_speed: float = 8
+    """initial wind speed in m/s"""
+    wind_direction: float = 270
+    """wind direction in meteorological convention (0° = North, 270° = West)"""
 
     # Algorithm specific arguments
     env_id: str = "Dec_Turb3_Row1_Floris" #""Turb32_Row5_Floris
@@ -202,7 +206,9 @@ if __name__ == "__main__":
         controls=controls, 
         max_num_steps=args.total_timesteps, 
         reward_shaper=reward_shaper,
-        vtk_wind=args.vtk_wind
+        vtk_wind=args.vtk_wind,
+        wind_speed=args.wind_speed,
+        wind_direction=args.wind_direction
     )
     args.num_agents = env.num_turbines
     run_name = f"{args.env_id}__{args.exp_name}__seed{args.seed}__tt{args.total_timesteps}"
