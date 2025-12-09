@@ -39,7 +39,10 @@ from scripts.sweep_config import (
     RESUME,
     SEEDS,
     SHUTDOWN_DELAY_MINUTES,
+    TESTING,
     TOTAL_TIMESTEPS,
+    WIND_DIRECTION,
+    WIND_SPEED,
 )
 
 
@@ -57,6 +60,8 @@ class RunConfig:
     episode_length: int
     total_timesteps: int
     seed: int
+    wind_speed: float = 8
+    wind_direction: float = 270
     plot_power_ylim: Optional[tuple[float, float]] = None
     plot_load_ylim: Optional[tuple[float, float]] = None
 
@@ -91,6 +96,8 @@ class SweepConfig:
     episode_lengths: list[int] = field(default_factory=lambda: EPISODE_LENGTHS)
     total_timesteps: list[int] = field(default_factory=lambda: TOTAL_TIMESTEPS)
     seeds: list[int] = field(default_factory=lambda: SEEDS)
+    wind_speed: float = WIND_SPEED
+    wind_direction: float = WIND_DIRECTION
     plot_power_ylim: Optional[tuple[float, float]] = PLOT_POWER_YLIM
     plot_load_ylim: Optional[tuple[float, float]] = PLOT_LOAD_YLIM
     eval_episode_length: int = EVAL_EPISODE_LENGTH
@@ -102,6 +109,8 @@ class SweepConfig:
     """If True, skip completed runs and reuse existing models; if False, train everything from scratch"""
     output_dir: Optional[Path] = None
     debug: bool = DEBUG
+    testing: bool = TESTING
+    """If True, prepend 'TEST_' to sweep directory name"""
     auto_shutdown: bool = AUTO_SHUTDOWN
     """Automatically shutdown the system after sweep completes"""
     shutdown_delay_minutes: int = SHUTDOWN_DELAY_MINUTES
@@ -142,7 +151,8 @@ class ParameterSweep:
         else:
             # No directory specified - create new one with timestamp
             self.timestamp = datetime.now().strftime("%d-%m-%y______%H-%M-%S______")
-            self.sweep_dir = PROJECT_ROOT / "parameter_sweeps" / f"{self.timestamp}_parameter_sweep"
+            prefix = "TEST_" if config.testing else ""
+            self.sweep_dir = PROJECT_ROOT / "parameter_sweeps" / f"{prefix}{self.timestamp}_parameter_sweep"
             self.sweep_dir.mkdir(parents=True, exist_ok=True)
 
         # Progress tracking
@@ -278,6 +288,8 @@ class ParameterSweep:
                             episode_length=episode_length,
                             total_timesteps=total_timesteps,
                             seed=seed,
+                            wind_speed=self.config.wind_speed,
+                            wind_direction=self.config.wind_direction,
                             plot_power_ylim=self.config.plot_power_ylim,
                             plot_load_ylim=self.config.plot_load_ylim,
                         )
@@ -355,6 +367,10 @@ class ParameterSweep:
             str(run_config.total_timesteps),
             "--seed",
             str(run_config.seed),
+            "--wind_speed",
+            str(run_config.wind_speed),
+            "--wind_direction",
+            str(run_config.wind_direction),
         ]
         
         # Add episode_length only if algorithm supports it
@@ -1045,6 +1061,8 @@ def main(
     episode_lengths: list[int] = EPISODE_LENGTHS,
     total_timesteps: list[int] = TOTAL_TIMESTEPS,
     seeds: list[int] = SEEDS,
+    wind_speed: float = WIND_SPEED,
+    wind_direction: float = WIND_DIRECTION,
     plot_power_ylim: Optional[tuple[float, float]] = PLOT_POWER_YLIM,
     plot_load_ylim: Optional[tuple[float, float]] = PLOT_LOAD_YLIM,
     eval_episode_length: int = EVAL_EPISODE_LENGTH,
@@ -1053,6 +1071,7 @@ def main(
     max_workers: int = MAX_WORKERS,
     resume: bool = RESUME,
     output_dir: Optional[str] = None,
+    testing: bool = TESTING,
     auto_shutdown: bool = AUTO_SHUTDOWN,
     shutdown_delay_minutes: int = SHUTDOWN_DELAY_MINUTES,
 ):
@@ -1066,6 +1085,8 @@ def main(
         episode_lengths: List of episode lengths to sweep over
         total_timesteps: List of total timesteps to sweep over
         seeds: List of random seeds to use
+        wind_speed: Wind speed in m/s (default: 8)
+        wind_direction: Wind direction in degrees, meteorological convention (default: 270)
         plot_power_ylim: Y-axis limits for power plots (min, max)
         plot_load_ylim: Y-axis limits for load plots (min, max)
         eval_episode_length: Episode length for evaluation
@@ -1078,6 +1099,7 @@ def main(
                 and don't search for existing models).
         output_dir: Path to sweep directory. If exists, will RESUME that sweep.
                    If new, creates sweep there. If None, creates new timestamped directory.
+        testing: If True, prepend 'TEST_' to sweep directory name (default: False)
         auto_shutdown: Automatically shutdown the system after sweep completes (default: False)
         shutdown_delay_minutes: Minutes to wait before shutting down (default: 5, allows time to cancel)
 
@@ -1119,6 +1141,10 @@ def main(
         # Disable resume to force re-training even if models exist
         python parameter_sweep_v2.py --algorithms ifppo \\
             --resume False
+        
+        # Testing mode (creates TEST_<timestamp>_parameter_sweep directory)
+        python parameter_sweep_v2.py --algorithms ippo \\
+            --testing True
     
     Note on auto-shutdown:
         Requires passwordless sudo for shutdown command. To set up:
@@ -1148,6 +1174,8 @@ def main(
         episode_lengths=episode_lengths,
         total_timesteps=total_timesteps,
         seeds=seeds,
+        wind_speed=wind_speed,
+        wind_direction=wind_direction,
         plot_power_ylim=plot_power_ylim,
         plot_load_ylim=plot_load_ylim,
         eval_episode_length=eval_episode_length,
@@ -1156,6 +1184,7 @@ def main(
         max_workers=max_workers,
         resume=resume,
         output_dir=Path(output_dir) if output_dir else None,
+        testing=testing,
         auto_shutdown=auto_shutdown,
         shutdown_delay_minutes=shutdown_delay_minutes,
     )
