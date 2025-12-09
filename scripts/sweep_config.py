@@ -40,7 +40,7 @@ VTK_WIND = True  # Set to True to generate VTK wind field files for ParaView vis
 # EVALUATION PARAMETERS
 # ================================
 
-EVAL_EPISODE_LENGTH = 100
+EVAL_EPISODE_LENGTH = 10
 EVAL_SEED = 1
 EVALUATION = "both"  # Options: "floris", "fastfarm", "both"
 

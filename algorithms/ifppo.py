@@ -201,8 +201,6 @@ if __name__ == "__main__":
         controls=controls, 
         max_num_steps=args.total_timesteps, 
         reward_shaper=FilteredStep(threshold=args.reward_tol),
-        vtk_wind=args.vtk_wind
-        reward_shaper=FilteredStep(threshold=args.reward_tol),
         vtk_wind=args.vtk_wind,
         wind_speed=args.wind_speed,
         wind_direction=args.wind_direction
