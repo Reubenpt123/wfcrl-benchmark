@@ -43,6 +43,7 @@ from scripts.sweep_config import (
     TOTAL_TIMESTEPS,
     WIND_DIRECTION,
     WIND_SPEED,
+    VTK_WIND,
 )
 
 
@@ -64,6 +65,7 @@ class RunConfig:
     wind_direction: float = 270
     plot_power_ylim: Optional[tuple[float, float]] = None
     plot_load_ylim: Optional[tuple[float, float]] = None
+    vtk_wind: bool = False
 
     def get_run_id(self) -> str:
         """Generate unique identifier for this run."""
@@ -100,6 +102,8 @@ class SweepConfig:
     wind_direction: float = WIND_DIRECTION
     plot_power_ylim: Optional[tuple[float, float]] = PLOT_POWER_YLIM
     plot_load_ylim: Optional[tuple[float, float]] = PLOT_LOAD_YLIM
+    vtk_wind: bool = VTK_WIND
+    """Generate VTK wind field files during evaluation for FAST.Farm ParaView visualization"""
     eval_episode_length: int = EVAL_EPISODE_LENGTH
     eval_seed: int = EVAL_SEED
     evaluation: str = EVALUATION
@@ -292,6 +296,7 @@ class ParameterSweep:
                             wind_direction=self.config.wind_direction,
                             plot_power_ylim=self.config.plot_power_ylim,
                             plot_load_ylim=self.config.plot_load_ylim,
+                            vtk_wind=self.config.vtk_wind,
                         )
                         configs.append(run_config)
         return configs
@@ -581,6 +586,58 @@ class ParameterSweep:
         
         return None
 
+    def _move_vtk_files(self, run_path: str, eval_env_id: str):
+        """Move VTK files from __simul__ directory to the model's evaluation directory.
+        
+        Args:
+            run_path: Path to the trained model directory
+            eval_env_id: Environment ID being evaluated (e.g., Dec_Ablaincourt_Fastfarm)
+        """
+        import shutil
+        import glob
+        
+        # Determine evaluation subdirectory name
+        if "Fastfarm" in eval_env_id:
+            eval_subdir = "fastfarm_evaluation"
+        else:
+            return  # No VTK files for FLORIS
+        
+        # Look for vtk_ff folders in __simul__/fastfarm/
+        simul_dir = PROJECT_ROOT / "__simul__" / "fastfarm"
+        if not simul_dir.exists():
+            return
+        
+        # Find all vtk_ff directories
+        vtk_dirs = list(simul_dir.glob("*/vtk_ff"))
+        
+        if not vtk_dirs:
+            print(f"   ℹ️  No VTK files found in {simul_dir}")
+            return
+        
+        # Create destination directory in the model's evaluation folder
+        dest_base = Path(run_path) / eval_subdir / "vtk_files"
+        dest_base.mkdir(parents=True, exist_ok=True)
+        
+        # Move each vtk_ff directory
+        moved_count = 0
+        for vtk_dir in vtk_dirs:
+            try:
+                # Use the parent directory name to create a unique folder
+                farm_name = vtk_dir.parent.name
+                dest_dir = dest_base / farm_name
+                
+                # Move the directory
+                if dest_dir.exists():
+                    shutil.rmtree(dest_dir)
+                shutil.move(str(vtk_dir), str(dest_dir))
+                moved_count += 1
+                print(f"   📦 Moved VTK files: {vtk_dir} -> {dest_dir}")
+            except Exception as e:
+                print(f"   ⚠️  Could not move VTK directory {vtk_dir}: {e}")
+        
+        if moved_count > 0:
+            print(f"   ✅ Moved {moved_count} VTK directory(ies) to {dest_base}")
+
     def _check_and_copy_existing_evaluation(self, run_path: str, eval_env_id: str) -> bool:
         """Check if evaluation already exists in the run path and is complete.
         
@@ -713,6 +770,10 @@ class ParameterSweep:
                     str(run_config.plot_load_ylim[1]),
                 ]
             )
+        
+        # Add VTK wind generation if enabled
+        if run_config.vtk_wind:
+            cmd.append("--vtk_wind")
 
         try:
             # Debug: print command being executed
@@ -746,6 +807,10 @@ class ParameterSweep:
                 }
 
             print(f"✅ Evaluation complete: {eval_run_id}")
+            
+            # Move VTK files if they exist (for FAST.Farm evaluations with vtk_wind enabled)
+            if run_config.vtk_wind and "Fastfarm" in eval_env_id:
+                self._move_vtk_files(run_path, eval_env_id)
             
             # Save evaluation progress
             self._save_progress(eval_run_id, progress_type="evaluation")
@@ -1065,6 +1130,7 @@ def main(
     wind_direction: float = WIND_DIRECTION,
     plot_power_ylim: Optional[tuple[float, float]] = PLOT_POWER_YLIM,
     plot_load_ylim: Optional[tuple[float, float]] = PLOT_LOAD_YLIM,
+    vtk_wind: bool = VTK_WIND,
     eval_episode_length: int = EVAL_EPISODE_LENGTH,
     eval_seed: int = EVAL_SEED,
     evaluation: str = EVALUATION,
@@ -1089,6 +1155,7 @@ def main(
         wind_direction: Wind direction in degrees, meteorological convention (default: 270)
         plot_power_ylim: Y-axis limits for power plots (min, max)
         plot_load_ylim: Y-axis limits for load plots (min, max)
+        vtk_wind: Enable VTK wind field file generation during evaluation for ParaView visualization (default: False)
         eval_episode_length: Episode length for evaluation
         eval_seed: Random seed for evaluation
         evaluation: Evaluation mode - "floris" (FLORIS only), "fastfarm" (FAST.Farm only), 
@@ -1178,6 +1245,7 @@ def main(
         wind_direction=wind_direction,
         plot_power_ylim=plot_power_ylim,
         plot_load_ylim=plot_load_ylim,
+        vtk_wind=vtk_wind,
         eval_episode_length=eval_episode_length,
         eval_seed=eval_seed,
         evaluation=evaluation,

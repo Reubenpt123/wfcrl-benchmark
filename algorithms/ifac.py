@@ -268,7 +268,7 @@ if __name__ == "__main__":
     global_step = 0
     start_time = time.time()
     # set single wind conditions for reproducibility
-    env.reset(options={"wind_speed": 8, "wind_direction": 270, "vtk_wind": True})
+    env.reset(options={"wind_speed": 8, "wind_direction": 270})
     last_progress_pct = -1  # Track last displayed progress percentage
 
     for step in range(1, args.total_timesteps):

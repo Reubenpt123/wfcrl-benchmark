@@ -106,6 +106,10 @@ class Args:
     """the number of iterations (computed in runtime)"""
     algorithm: str = ""
     """ the name of the trained algorithm"""
+    greedy: bool = False
+    """if toggled, runs greedy baseline with no control (ignores pretrained models)"""
+    vtk_wind: bool = False
+    """if toggled, generates VTK wind field files for ParaView visualization"""
 
     # model arguments
     pretrained_models: str = ""
@@ -138,14 +142,23 @@ if __name__ == "__main__":
     args = tyro.cli(Args)
     # Match training script control specification exactly
     algorithm = args.algorithm
-    assert algorithm in ["ippo", "mappo", "idqn", "idrqn", "qmix", "ifac", "ifppo"]
-    controls = {"yaw": (-30, 30, 1)}  # Discrete control with specific bounds
+    
+    # Set controls based on greedy flag
+    if args.greedy:
+        controls = {}  # No control - greedy baseline operation
+        print("Running in GREEDY mode (no control)")
+    else:
+        assert algorithm in ["ippo", "mappo", "idqn", "idrqn", "qmix", "ifac", "ifppo"]
+        controls = {"yaw": (-30, 30, 1)}  # Discrete control with specific bounds
+        print(f"Running with algorithm: {algorithm}")
+    
     env = envs.make(
         args.env_id,
         controls=controls, 
         max_num_steps=args.episode_length,
         load_coef=args.load_coef,
-        continuous_control=algorithm in ["mappo", "ippo", "ifac", "ifppo"],
+        continuous_control=algorithm in ["mappo", "ippo", "ifac", "ifppo"] and not args.greedy,
+        vtk_wind=args.vtk_wind,
         wind_speed=args.wind_speed,
         wind_direction=args.wind_direction
     )
@@ -159,7 +172,9 @@ if __name__ == "__main__":
         args.output_folder = "fastfarm_evaluation"
     # else: keep default "evaluation" for other environment types
     
-    Path(f"{args.pretrained_models}/{args.output_folder}").mkdir(exist_ok=True, parents=True)
+    # Only create output folder if not in greedy mode
+    if not args.greedy:
+        Path(f"{args.pretrained_models}/{args.output_folder}").mkdir(exist_ok=True, parents=True)
 
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -168,67 +183,88 @@ if __name__ == "__main__":
 
     
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
-    obs_space = env.observation_space(env.possible_agents[0])
-    action_space_extractor = VectorExtractor(env.action_space(env.possible_agents[0]))
     
-    # Use appropriate extractor based on algorithm
-    if algorithm in ["ifac", "ifppo"]:
-        global_obs_space = env.state_space
-        partial_obs_extractor = DfacSPaceExtractor(obs_space, global_obs_space)
+    # Skip agent loading for greedy mode
+    if args.greedy:
+        print("Greedy mode: skipping agent initialization and model loading")
+        agents = None
+        get_deterministic_action = None
     else:
-        partial_obs_extractor = VectorExtractor(obs_space) # option to filter_out=["pitch", "torque"]
-    
-    partial_obs_space = partial_obs_extractor.space
-    action_space = action_space_extractor.space
-    hidden_layer_nn = [] if not isinstance(args.hidden_layer_nn, tuple) else args.hidden_layer_nn
-    Agent, get_deterministic_action = ALGO_TO_AGENTS(algorithm)
-    
-    # Create agents with algorithm-specific parameters
-    if algorithm in ["ifac", "ifppo"]:
-        # IFAC and IFPPO require features_extractor_params for Fourier features
-        features_extractor_params = {
-            "order": 8,  # default fourier_order
-            "hyper": False,  # default fourier_hyper
-            "learnable": False,  # default fourier_learnable
-            "max_dim": 81,  # default fourier_maxdim
-            "seed": args.seed,
-        }
-        agents = [
-            Agent(partial_obs_space, action_space, hidden_layer_nn, features_extractor_params).eval().to(device)
-            for _ in range(args.num_agents)
-        ]
+        obs_space = env.observation_space(env.possible_agents[0])
+        action_space_extractor = VectorExtractor(env.action_space(env.possible_agents[0]))
         
-        # Define IFAC/IFPPO-specific action function that can access global state
-        def get_deterministic_action(agent, observation, last_action=None):
-            # IFAC/IFPPO need both local and global observations
-            global_obs = env.state()
-            observation = torch.Tensor(partial_obs_extractor(observation, global_obs)).to(device)
-            action, _, _, _= agent.get_action_and_value(observation, deterministic=True)
-            return action_space_extractor.make_dict(action)
-    else:
-        agents = [
-            Agent(partial_obs_space, action_space, hidden_layer_nn).eval().to(device)
-            for _ in range(args.num_agents)
-        ]
+        # Use appropriate extractor based on algorithm
+        if algorithm in ["ifac", "ifppo"]:
+            global_obs_space = env.state_space
+            partial_obs_extractor = DfacSPaceExtractor(obs_space, global_obs_space)
+        else:
+            partial_obs_extractor = VectorExtractor(obs_space) # option to filter_out=["pitch", "torque"]
+        
+        partial_obs_space = partial_obs_extractor.space
+        action_space = action_space_extractor.space
+        hidden_layer_nn = [] if not isinstance(args.hidden_layer_nn, tuple) else args.hidden_layer_nn
+        Agent, get_deterministic_action = ALGO_TO_AGENTS(algorithm)
+        
+        # Create agents with algorithm-specific parameters
+        if algorithm in ["ifac", "ifppo"]:
+            # IFAC and IFPPO require features_extractor_params for Fourier features
+            features_extractor_params = {
+                "order": 8,  # default fourier_order
+                "hyper": False,  # default fourier_hyper
+                "learnable": False,  # default fourier_learnable
+                "max_dim": 81,  # default fourier_maxdim
+                "seed": args.seed,
+            }
+            agents = [
+                Agent(partial_obs_space, action_space, hidden_layer_nn, features_extractor_params).eval().to(device)
+                for _ in range(args.num_agents)
+            ]
+            
+            # Define IFAC/IFPPO-specific action function that can access global state
+            def get_deterministic_action(agent, observation, last_action=None):
+                # IFAC/IFPPO need both local and global observations
+                global_obs = env.state()
+                observation = torch.Tensor(partial_obs_extractor(observation, global_obs)).to(device)
+                action, _, _, _= agent.get_action_and_value(observation, deterministic=True)
+                return action_space_extractor.make_dict(action)
+        else:
+            agents = [
+                Agent(partial_obs_space, action_space, hidden_layer_nn).eval().to(device)
+                for _ in range(args.num_agents)
+            ]
 
-    args.pretrained_models = Path(args.pretrained_models)
-    assert args.pretrained_models.exists()
-    for idagent, agent in enumerate(agents):
-        try:
-            path = list(args.pretrained_models.glob(f"*model_{idagent}"))[0]
-        except:
-            raise FileNotFoundError(f"No file in model_{idagent} found under folder {args.pretrained_models}")
-        params = torch.load(str(path), map_location='cpu')
-        agent.load_state_dict(params)
+        args.pretrained_models = Path(args.pretrained_models)
+        assert args.pretrained_models.exists()
+        for idagent, agent in enumerate(agents):
+            try:
+                path = list(args.pretrained_models.glob(f"*model_{idagent}"))[0]
+            except:
+                raise FileNotFoundError(f"No file in model_{idagent} found under folder {args.pretrained_models}")
+            params = torch.load(str(path), map_location='cpu')
+            agent.load_state_dict(params)
 
     if args.scenario == "windrose":
         windrose = prepare_eval_windrose(args.wind_data, num_bins=5)
-        def evaluate(eval_env, eval_agents):
-            return eval_wind_rose(eval_env, eval_agents, windrose, get_deterministic_action)[0]
+        if args.greedy:
+            # For greedy mode, pass empty list and greedy action function
+            def greedy_action(agent, obs, last_action=None):
+                return {}  # Return empty action dict for greedy baseline
+            def evaluate(eval_env, eval_agents):
+                return eval_wind_rose(eval_env, [None] * args.num_agents, windrose, greedy_action)[0]
+        else:
+            def evaluate(eval_env, eval_agents):
+                return eval_wind_rose(eval_env, eval_agents, windrose, get_deterministic_action)[0]
         env.reset(args.seed)
     else:
-        def evaluate(eval_env, eval_agents):
-            return eval_policies(eval_env, eval_agents, get_deterministic_action)
+        if args.greedy:
+            # For greedy mode, pass empty list and greedy action function
+            def greedy_action(agent, obs, last_action=None):
+                return {}  # Return empty action dict for greedy baseline
+            def evaluate(eval_env, eval_agents):
+                return eval_policies(eval_env, [None] * args.num_agents, greedy_action)
+        else:
+            def evaluate(eval_env, eval_agents):
+                return eval_policies(eval_env, eval_agents, get_deterministic_action)
         env.reset(options={"wind_speed": 8, "wind_direction": 270})
 
     
@@ -245,11 +281,28 @@ if __name__ == "__main__":
 
     for iteration in range(1, args.num_episodes + 1):
         if args.scenario == "windrose":
-            score, windrose_r, bins = eval_wind_rose(env, agents, windrose, get_deterministic_action)
+            if args.greedy:
+                # Create greedy action function for windrose
+                def greedy_action(agent, obs, last_action=None):
+                    return {}
+                score, windrose_r, bins = eval_wind_rose(env, [None] * args.num_agents, windrose, greedy_action)
+            else:
+                score, windrose_r, bins = eval_wind_rose(env, agents, windrose, get_deterministic_action)
             df = pd.DataFrame(np.c_[bins, windrose_r], columns=["wd", "ws", "score"])
-            df.to_csv(args.pretrained_models/f"{args.output_folder}/windrose_scores.csv", index=False)
+            if args.greedy:
+                output_path = Path(f"runs/greedy_baseline/{args.env_id}")
+                output_path.mkdir(parents=True, exist_ok=True)
+                df.to_csv(output_path/"windrose_scores.csv", index=False)
+            else:
+                df.to_csv(args.pretrained_models/f"{args.output_folder}/windrose_scores.csv", index=False)
         else:
-            score = eval_policies(env, agents, get_deterministic_action)
+            if args.greedy:
+                # Create greedy action function
+                def greedy_action(agent, obs, last_action=None):
+                    return {}
+                score = eval_policies(env, [None] * args.num_agents, greedy_action)
+            else:
+                score = eval_policies(env, agents, get_deterministic_action)
             yaws, powers, loads, rewards = get_env_history(env)
             # all policies have received the same reward
             episode_rewards.append(rewards.squeeze())
@@ -257,10 +310,19 @@ if __name__ == "__main__":
             episode_powers.append(powers)
             episode_yaws.append(yaws)
 
-            pd.DataFrame(yaws).to_csv(args.pretrained_models/f"{args.output_folder}/yaws.csv", index=False)
-            pd.DataFrame(loads).to_csv(args.pretrained_models/f"{args.output_folder}/loads.csv", index=False)
-            pd.DataFrame(powers).to_csv(args.pretrained_models/f"{args.output_folder}/powers.csv", index=False)
-            pd.DataFrame(rewards.squeeze()).to_csv(args.pretrained_models/f"{args.output_folder}/rewards.csv", index=False)
+            # Save to appropriate folder
+            if args.greedy:
+                output_path = Path(f"runs/greedy_baseline/{args.env_id}")
+                output_path.mkdir(parents=True, exist_ok=True)
+                pd.DataFrame(yaws).to_csv(output_path/"yaws.csv", index=False)
+                pd.DataFrame(loads).to_csv(output_path/"loads.csv", index=False)
+                pd.DataFrame(powers).to_csv(output_path/"powers.csv", index=False)
+                pd.DataFrame(rewards.squeeze()).to_csv(output_path/"rewards.csv", index=False)
+            else:
+                pd.DataFrame(yaws).to_csv(args.pretrained_models/f"{args.output_folder}/yaws.csv", index=False)
+                pd.DataFrame(loads).to_csv(args.pretrained_models/f"{args.output_folder}/loads.csv", index=False)
+                pd.DataFrame(powers).to_csv(args.pretrained_models/f"{args.output_folder}/powers.csv", index=False)
+                pd.DataFrame(rewards.squeeze()).to_csv(args.pretrained_models/f"{args.output_folder}/rewards.csv", index=False)
             # with open(f"{args.output_folder}/{run_name}/history_{iteration}.pickle", 'wb') as f:
             #     pickle.dump(env.history, f, pickle.HIGHEST_PROTOCOL)
             try:
@@ -270,11 +332,19 @@ if __name__ == "__main__":
                 total_timesteps = args.training_timesteps if args.training_timesteps > 0 else None
                 episode_length = args.training_episode_length if args.training_episode_length > 0 else args.episode_length
                 training_seed = args.training_seed if args.training_seed > 0 else None
-                fig = plot_env_history(env, env_name=args.env_id, algorithm=algorithm,
+                
+                algo_name = "greedy_baseline" if args.greedy else algorithm
+                fig = plot_env_history(env, env_name=args.env_id, algorithm=algo_name,
                                       power_ylim=power_ylim, load_ylim=load_ylim,
                                       total_timesteps=total_timesteps, episode_length=episode_length,
                                       seed=training_seed)
-                fig.savefig(f"{args.pretrained_models}/{args.output_folder}/plot_iter{iteration}.png")
+                
+                if args.greedy:
+                    output_path = Path(f"runs/greedy_baseline/{args.env_id}")
+                    output_path.mkdir(parents=True, exist_ok=True)
+                    fig.savefig(output_path/f"plot_iter{iteration}.png")
+                else:
+                    fig.savefig(f"{args.pretrained_models}/{args.output_folder}/plot_iter{iteration}.png")
             except:
                 print("Could not save figure.")
     
