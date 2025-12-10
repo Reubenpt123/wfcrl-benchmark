@@ -40,9 +40,9 @@ VTK_WIND = True  # Set to True to generate VTK wind field files for ParaView vis
 # EVALUATION PARAMETERS
 # ================================
 
-EVAL_EPISODE_LENGTH = 10
+EVAL_EPISODE_LENGTH = 2
 EVAL_SEED = 1
-EVALUATION = "both"  # Options: "floris", "fastfarm", "both"
+EVALUATION = "fastfarm"  # Options: "floris", "fastfarm", "both"
 
 # ================================
 # EXECUTION SETTINGS
@@ -50,8 +50,8 @@ EVALUATION = "both"  # Options: "floris", "fastfarm", "both"
 
 MAX_WORKERS = 2
 RESUME = False  # If True, skip completed runs and reuse existing models; if False, train from scratch
-DEBUG = True  # Set to True to print all training/evaluation output to terminal
 TESTING = True  # If True, prepend "TEST_" to sweep directory name
+FILTER_OUTPUT = True  # If True, filter out unwanted console messages (from FAST.Farm) during evaluation
 AUTO_SHUTDOWN = False # If True, shut down machine after sweep completion
 SHUTDOWN_DELAY_MINUTES = 5  # Minutes to wait before shutting down
 
@@ -103,3 +103,28 @@ ALGORITHM_CONFIGS = {
         "hidden_layer_nn": 64,
     },
 }
+FILTER_PHRASES = [  # List of FAST.Farm phrases to filter from evaluation output
+    "Running",
+    "Copyright",
+    "This program is licensed",
+    "LICENSE",
+    "FAST.Farm input file",
+    "Compile Info:",
+    " - Compiler:",
+    " - Architecture:",
+    " - Precision:",
+    " - OpenMP:",
+    " - Date:",
+    " - Time:",
+    "Execution Info:",
+    "Heading of the FAST.Farm input file:",
+    "FAST.Farm     input         - file",
+    "OpenFAST input file heading:",
+    "Certification",
+    "Using legacy Bladed DLL interface.",
+    "Nodal outputs section",
+    "OutFmt produces a column",
+    "NumPlanes has been reduced",
+    "****************************",
+    "FAST.Farm             ",
+]
