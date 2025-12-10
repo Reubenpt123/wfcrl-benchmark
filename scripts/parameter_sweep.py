@@ -26,19 +26,21 @@ from scripts.sweep_config import (
     ALGORITHMS,
     ALGORITHM_CONFIGS,
     AUTO_SHUTDOWN,
-    DEBUG,
     ENV_ID,
     ENVIRONMENTS,
     EPISODE_LENGTHS,
     EVAL_EPISODE_LENGTH,
     EVAL_SEED,
     EVALUATION,
+    FILTER_OUTPUT,
+    FILTER_PHRASES,
     MAX_WORKERS,
     PLOT_LOAD_YLIM,
     PLOT_POWER_YLIM,
     RESUME,
     SEEDS,
     SHUTDOWN_DELAY_MINUTES,
+    TESTING,
     TOTAL_TIMESTEPS,
     VTK_WIND,
 )
@@ -105,7 +107,12 @@ class SweepConfig:
     resume: bool = RESUME
     """If True, skip completed runs and reuse existing models; if False, train everything from scratch"""
     output_dir: Optional[Path] = None
-    debug: bool = DEBUG
+    testing: bool = TESTING
+    """If True, prepend 'TEST_' to sweep directory name"""
+    filter_output: bool = FILTER_OUTPUT
+    """If True, filter unwanted console messages during evaluation"""
+    filter_phrases: list[str] = field(default_factory=lambda: FILTER_PHRASES)
+    """List of phrases to filter from evaluation output"""
     auto_shutdown: bool = AUTO_SHUTDOWN
     """Automatically shutdown the system after sweep completes"""
     shutdown_delay_minutes: int = SHUTDOWN_DELAY_MINUTES
@@ -146,7 +153,8 @@ class ParameterSweep:
         else:
             # No directory specified - create new one with timestamp
             self.timestamp = datetime.now().strftime("%d-%m-%y______%H-%M-%S______")
-            self.sweep_dir = PROJECT_ROOT / "parameter_sweeps" / f"{self.timestamp}_parameter_sweep"
+            prefix = "TEST_" if config.testing else ""
+            self.sweep_dir = PROJECT_ROOT / "parameter_sweeps" / f"{prefix}{self.timestamp}_parameter_sweep"
             self.sweep_dir.mkdir(parents=True, exist_ok=True)
 
         # Progress tracking
@@ -401,28 +409,16 @@ class ParameterSweep:
 
         # Execute training
         try:
-            # Debug: print command being executed
-            if self.config.debug:
-                print(f"🐛 Debug - Executing command: {' '.join(cmd)}")
-            
             result = subprocess.run(
                 cmd,
-                capture_output=not self.config.debug,  # Don't capture if debug (stream to terminal)
+                capture_output=False,  # Stream output to terminal
                 text=True,
                 timeout=3600,  # 1 hour timeout
             )
-            
-            # Debug: print output
-            if self.config.debug and result.stdout:
-                print(f"🐛 Debug - STDOUT for {run_id}:\n{result.stdout}")
-            if self.config.debug and result.stderr:
-                print(f"🐛 Debug - STDERR for {run_id}:\n{result.stderr}")
 
             if result.returncode != 0:
                 error_msg = f"Training failed with exit code {result.returncode}"
                 print(f"❌ {error_msg}: {run_id}")
-                if not self.config.debug and result.stderr:
-                    print(f"STDERR: {result.stderr[-500:]}")  # Last 500 chars
                 return {"status": "failed", "run_id": run_id, "error": error_msg}
 
             # Construct run path directly from known parameters
@@ -570,57 +566,77 @@ class ParameterSweep:
         
         return None
 
-    def _move_vtk_files(self, run_path: str, eval_env_id: str):
-        """Move VTK files from __simul__ directory to the model's evaluation directory.
+    def _move_fastfarm_files(self, eval_env_id: str, start_time: float, run_path: str):
+        """Move FAST.Farm case files from __simul__/fastfarm directory to the run folder.
         
         Args:
-            run_path: Path to the trained model directory
             eval_env_id: Environment ID being evaluated (e.g., Dec_Ablaincourt_Fastfarm)
+            start_time: Timestamp when evaluation started (to filter old files)
+            run_path: Path to the run directory where FAST.Farm files should be stored
         """
         import shutil
-        import glob
         
-        # Determine evaluation subdirectory name
-        if "Fastfarm" in eval_env_id:
-            eval_subdir = "fastfarm_evaluation"
-        else:
-            return  # No VTK files for FLORIS
+        # Only for FAST.Farm evaluations
+        if "Fastfarm" not in eval_env_id:
+            return
         
-        # Look for vtk_ff folders in __simul__/fastfarm/
+        # Look for FAST.Farm case directories in __simul__/fastfarm/
         simul_dir = PROJECT_ROOT / "__simul__" / "fastfarm"
+        
         if not simul_dir.exists():
             return
         
-        # Find all vtk_ff directories
-        vtk_dirs = list(simul_dir.glob("*/vtk_ff"))
+        # Find all FAST.Farm case directories created after the evaluation started
+        # Case directory names include timestamp: FastFarm__37s__7T_1765295676.3268354
+        all_case_dirs = [d for d in simul_dir.iterdir() if d.is_dir()]
         
-        if not vtk_dirs:
-            print(f"   ℹ️  No VTK files found in {simul_dir}")
+        # Filter by creation time AND by timestamp in filename
+        case_dirs = []
+        for d in all_case_dirs:
+            # Extract timestamp from directory name (after last underscore)
+            try:
+                timestamp_str = d.name.split('_')[-1]
+                dir_timestamp = float(timestamp_str)
+                # Only include if created during this evaluation (with 1 second buffer before)
+                if dir_timestamp >= (start_time - 1.0):
+                    case_dirs.append(d)
+            except (ValueError, IndexError):
+                # If we can't parse timestamp, check file creation time as fallback
+                if d.stat().st_mtime >= start_time:
+                    case_dirs.append(d)
+        
+        if not case_dirs:
             return
         
-        # Create destination directory in the model's evaluation folder
-        dest_base = Path(run_path) / eval_subdir / "vtk_files"
+        # Create destination directory in the run folder
+        dest_base = Path(run_path) / "fastfarm_evaluation"
         dest_base.mkdir(parents=True, exist_ok=True)
         
-        # Move each vtk_ff directory
+        # Move each case directory
         moved_count = 0
-        for vtk_dir in vtk_dirs:
+        for case_dir in case_dirs:
             try:
-                # Use the parent directory name to create a unique folder
-                farm_name = vtk_dir.parent.name
-                dest_dir = dest_base / farm_name
+                # Use the case directory name (e.g., FastFarm__37s__7T_1765295676.3268354)
+                case_name = case_dir.name
+                dest_dir = dest_base / case_name
                 
-                # Move the directory
+                # Remove existing directory if present
                 if dest_dir.exists():
                     shutil.rmtree(dest_dir)
-                shutil.move(str(vtk_dir), str(dest_dir))
+                
+                # Move the entire case directory (includes VTK files and all config files)
+                shutil.move(str(case_dir), str(dest_dir))
                 moved_count += 1
-                print(f"   📦 Moved VTK files: {vtk_dir} -> {dest_dir}")
             except Exception as e:
-                print(f"   ⚠️  Could not move VTK directory {vtk_dir}: {e}")
+                print(f"   ❌ Could not move case directory {case_dir.name}: {e}")
         
         if moved_count > 0:
-            print(f"   ✅ Moved {moved_count} VTK directory(ies) to {dest_base}")
+            # Clean up the simul directory if it's empty
+            try:
+                if not any(simul_dir.iterdir()):
+                    simul_dir.rmdir()
+            except Exception:
+                pass  # Don't fail if cleanup doesn't work
 
     def _check_and_copy_existing_evaluation(self, run_path: str, eval_env_id: str) -> bool:
         """Check if evaluation already exists in the run path and is complete.
@@ -681,6 +697,10 @@ class ParameterSweep:
         print(f"   Training env: {run_config.env_id}")
         print(f"   Evaluation env: {eval_env_id}")
         print(f"   Using model from: {run_path}")
+        
+        # Record start time for filtering FAST.Farm files
+        import time
+        eval_start_time = time.time()
 
         if not run_path or not Path(run_path).exists():
             return {
@@ -760,41 +780,89 @@ class ParameterSweep:
             cmd.append("--vtk_wind")
 
         try:
-            # Debug: print command being executed
-            if self.config.debug:
-                print(f"🐛 Debug - Evaluation command: {' '.join(cmd)}")
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=not self.config.debug,  # Don't capture if debug (stream to terminal)
-                text=True,
-                timeout=7200,  # 2 hour timeout
-            )
-            
-            # Debug: print output
-            if self.config.debug and result.stdout:
-                print(f"🐛 Debug - Evaluation STDOUT for {eval_run_id}:\n{result.stdout}")
-            if self.config.debug and result.stderr:
-                print(f"🐛 Debug - Evaluations STDERR for {eval_run_id}:\n{result.stderr}")
-
-            if result.returncode != 0:
-                print(f"❌ Evaluation failed: {eval_run_id}")
-                error_msg = f"Exit code {result.returncode}"
-                if not self.config.debug and result.stderr:
-                    print(f"   Error: {result.stderr[-500:]}")  # Last 500 chars of stderr
-                    error_msg += f": {result.stderr[-200:]}"
-                return {
-                    "status": "failed",
-                    "run_id": eval_run_id,
-                    "eval_env_id": eval_env_id,
-                    "error": error_msg,
-                }
+            # When filtering is on, capture and filter, otherwise just stream
+            if self.config.filter_output:
+                # Use Popen with real-time filtering
+                import sys
+                import threading
+                
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1
+                )
+                
+                def read_output():
+                    last_line_blank = False
+                    try:
+                        for line in iter(process.stdout.readline, ''):
+                            if not line:
+                                break
+                            # Filter and print line by line
+                            if not any(phrase in line for phrase in self.config.filter_phrases):
+                                # Skip consecutive blank lines
+                                is_blank = line.strip() == ''
+                                if not (is_blank and last_line_blank):
+                                    print(line, end='')
+                                    sys.stdout.flush()
+                                last_line_blank = is_blank
+                    finally:
+                        process.stdout.close()
+                
+                # Read output in a thread to prevent blocking
+                reader_thread = threading.Thread(target=read_output)
+                reader_thread.daemon = True
+                reader_thread.start()
+                
+                # Wait for process to complete
+                try:
+                    return_code = process.wait(timeout=7200)
+                    reader_thread.join(timeout=5)  # Give reader thread time to finish
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                    reader_thread.join(timeout=5)
+                    print(f"⏱️  Evaluation timeout: {eval_run_id}")
+                    return {
+                        "status": "failed",
+                        "run_id": eval_run_id,
+                        "eval_env_id": eval_env_id,
+                        "error": "Evaluation timed out after 7200 seconds (2 hours)",
+                    }
+                
+                if return_code != 0:
+                    print(f"❌ Evaluation failed: {eval_run_id}")
+                    return {
+                        "status": "failed",
+                        "run_id": eval_run_id,
+                        "eval_env_id": eval_env_id,
+                        "error": f"Exit code {return_code}",
+                    }
+            else:
+                # Filtering off - just stream everything
+                result = subprocess.run(
+                    cmd,
+                    capture_output=False,
+                    text=True,
+                    timeout=7200,
+                )
+                
+                if result.returncode != 0:
+                    print(f"❌ Evaluation failed: {eval_run_id}")
+                    return {
+                        "status": "failed",
+                        "run_id": eval_run_id,
+                        "eval_env_id": eval_env_id,
+                        "error": f"Exit code {result.returncode}",
+                    }
 
             print(f"✅ Evaluation complete: {eval_run_id}")
             
-            # Move VTK files if they exist (for FAST.Farm evaluations with vtk_wind enabled)
-            if run_config.vtk_wind and "Fastfarm" in eval_env_id:
-                self._move_vtk_files(run_path, eval_env_id)
+            # Move FAST.Farm files if this is a FAST.Farm evaluation
+            if "Fastfarm" in eval_env_id:
+                self._move_fastfarm_files(eval_env_id, eval_start_time, run_path)
             
             # Save evaluation progress
             self._save_progress(eval_run_id, progress_type="evaluation")
@@ -1119,6 +1187,9 @@ def main(
     max_workers: int = MAX_WORKERS,
     resume: bool = RESUME,
     output_dir: Optional[str] = None,
+    testing: bool = TESTING,
+    filter_output: bool = FILTER_OUTPUT,
+    filter_phrases: list[str] = FILTER_PHRASES,
     auto_shutdown: bool = AUTO_SHUTDOWN,
     shutdown_delay_minutes: int = SHUTDOWN_DELAY_MINUTES,
 ):
@@ -1145,6 +1216,9 @@ def main(
                 and don't search for existing models).
         output_dir: Path to sweep directory. If exists, will RESUME that sweep.
                    If new, creates sweep there. If None, creates new timestamped directory.
+        testing: If True, prepend 'TEST_' to sweep directory name (default: False)
+        filter_output: If True, filter unwanted console messages from evaluation output (default: True)
+        filter_phrases: List of phrases to filter from output (default: warnings and library messages)
         auto_shutdown: Automatically shutdown the system after sweep completes (default: False)
         shutdown_delay_minutes: Minutes to wait before shutting down (default: 5, allows time to cancel)
 
@@ -1224,6 +1298,9 @@ def main(
         max_workers=max_workers,
         resume=resume,
         output_dir=Path(output_dir) if output_dir else None,
+        testing=testing,
+        filter_output=filter_output,
+        filter_phrases=filter_phrases,
         auto_shutdown=auto_shutdown,
         shutdown_delay_minutes=shutdown_delay_minutes,
     )
