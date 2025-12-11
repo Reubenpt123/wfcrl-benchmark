@@ -42,9 +42,9 @@ from scripts.sweep_config import (
     SHUTDOWN_DELAY_MINUTES,
     TESTING,
     TOTAL_TIMESTEPS,
+    VTK_WIND,
     WIND_DIRECTION,
     WIND_SPEED,
-    VTK_WIND,
 )
 
 
@@ -62,7 +62,7 @@ class RunConfig:
     episode_length: int
     total_timesteps: int
     seed: int
-    wind_speed: float = 8
+    wind_speed: float = 8.0
     wind_direction: float = 270
     plot_power_ylim: Optional[tuple[float, float]] = None
     plot_load_ylim: Optional[tuple[float, float]] = None
@@ -423,7 +423,7 @@ class ParameterSweep:
         try:
             result = subprocess.run(
                 cmd,
-                capture_output=False,  # Stream output to terminal
+                capture_output=False,
                 text=True,
                 timeout=3600,  # 1 hour timeout
             )
@@ -431,6 +431,8 @@ class ParameterSweep:
             if result.returncode != 0:
                 error_msg = f"Training failed with exit code {result.returncode}"
                 print(f"❌ {error_msg}: {run_id}")
+                if result.stderr:
+                    print(f"STDERR: {result.stderr[-500:]}")  # Last 500 chars
                 return {"status": "failed", "run_id": run_id, "error": error_msg}
 
             # Construct run path directly from known parameters
@@ -746,6 +748,10 @@ class ParameterSweep:
             run_path,
             "--episode_length",
             str(self.config.eval_episode_length),
+            "--wind_speed",
+            str(run_config.wind_speed),
+            "--wind_direction",
+            str(run_config.wind_direction),
             "--training_timesteps",
             str(run_config.total_timesteps),
             "--training_episode_length",
@@ -792,83 +798,36 @@ class ParameterSweep:
             cmd.append("--vtk_wind")
 
         try:
-            # When filtering is on, capture and filter, otherwise just stream
-            if self.config.filter_output:
-                # Use Popen with real-time filtering
-                import sys
-                import threading
+            # Show output in real-time
+            result = subprocess.run(
+                cmd,
+                capture_output=False,
+                text=True,
+                timeout=7200,
+            )
+            
+            if result.returncode != 0:
+                # Filter stderr for error message if filtering is enabled
+                if self.config.filter_output and result.stderr:
+                    filtered_lines = [
+                        line for line in result.stderr.splitlines()
+                        if not any(phrase in line for phrase in self.config.filter_phrases)
+                    ]
+                    filtered_stderr = "\n".join(filtered_lines)
+                else:
+                    filtered_stderr = result.stderr
                 
-                process = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1
-                )
-                
-                def read_output():
-                    last_line_blank = False
-                    try:
-                        for line in iter(process.stdout.readline, ''):
-                            if not line:
-                                break
-                            # Filter and print line by line
-                            if not any(phrase in line for phrase in self.config.filter_phrases):
-                                # Skip consecutive blank lines
-                                is_blank = line.strip() == ''
-                                if not (is_blank and last_line_blank):
-                                    print(line, end='')
-                                    sys.stdout.flush()
-                                last_line_blank = is_blank
-                    finally:
-                        process.stdout.close()
-                
-                # Read output in a thread to prevent blocking
-                reader_thread = threading.Thread(target=read_output)
-                reader_thread.daemon = True
-                reader_thread.start()
-                
-                # Wait for process to complete
-                try:
-                    return_code = process.wait(timeout=7200)
-                    reader_thread.join(timeout=5)  # Give reader thread time to finish
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
-                    reader_thread.join(timeout=5)
-                    print(f"⏱️  Evaluation timeout: {eval_run_id}")
-                    return {
-                        "status": "failed",
-                        "run_id": eval_run_id,
-                        "eval_env_id": eval_env_id,
-                        "error": "Evaluation timed out after 7200 seconds (2 hours)",
-                    }
-                
-                if return_code != 0:
-                    print(f"❌ Evaluation failed: {eval_run_id}")
-                    return {
-                        "status": "failed",
-                        "run_id": eval_run_id,
-                        "eval_env_id": eval_env_id,
-                        "error": f"Exit code {return_code}",
-                    }
-            else:
-                # Filtering off - just stream everything
-                result = subprocess.run(
-                    cmd,
-                    capture_output=False,
-                    text=True,
-                    timeout=7200,
-                )
-                
-                if result.returncode != 0:
-                    print(f"❌ Evaluation failed: {eval_run_id}")
-                    return {
-                        "status": "failed",
-                        "run_id": eval_run_id,
-                        "eval_env_id": eval_env_id,
-                        "error": f"Exit code {result.returncode}",
-                    }
+                print(f"❌ Evaluation failed: {eval_run_id}")
+                error_msg = f"Exit code {result.returncode}"
+                if filtered_stderr:
+                    print(f"   Error: {filtered_stderr[-500:]}")
+                    error_msg += f": {filtered_stderr[-200:]}"
+                return {
+                    "status": "failed",
+                    "run_id": eval_run_id,
+                    "eval_env_id": eval_env_id,
+                    "error": error_msg,
+                }
 
             print(f"✅ Evaluation complete: {eval_run_id}")
             
@@ -1217,8 +1176,6 @@ def main(
         episode_lengths: List of episode lengths to sweep over
         total_timesteps: List of total timesteps to sweep over
         seeds: List of random seeds to use
-        wind_speed: Wind speed in m/s (default: 8)
-        wind_direction: Wind direction in degrees, meteorological convention (default: 270)
         plot_power_ylim: Y-axis limits for power plots (min, max)
         plot_load_ylim: Y-axis limits for load plots (min, max)
         vtk_wind: Enable VTK wind field file generation during evaluation for ParaView visualization (default: False)
@@ -1276,10 +1233,6 @@ def main(
         # Disable resume to force re-training even if models exist
         python parameter_sweep_v2.py --algorithms ifppo \\
             --resume False
-        
-        # Testing mode (creates TEST_<timestamp>_parameter_sweep directory)
-        python parameter_sweep_v2.py --algorithms ippo \\
-            --testing True
     
     Note on auto-shutdown:
         Requires passwordless sudo for shutdown command. To set up:

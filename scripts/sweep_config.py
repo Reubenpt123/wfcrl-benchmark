@@ -51,7 +51,7 @@ EVALUATION = "fastfarm"  # Options: "floris", "fastfarm", "both"
 MAX_WORKERS = 2
 RESUME = False  # If True, skip completed runs and reuse existing models; if False, train from scratch
 TESTING = True  # If True, prepend "TEST_" to sweep directory name
-FILTER_OUTPUT = True  # If True, filter out unwanted console messages (from FAST.Farm) during evaluation
+FILTER_OUTPUT = False  # If True, filter out unwanted console messages (from FAST.Farm) during evaluation
 AUTO_SHUTDOWN = False # If True, shut down machine after sweep completion
 SHUTDOWN_DELAY_MINUTES = 5  # Minutes to wait before shutting down
 
@@ -103,6 +103,7 @@ ALGORITHM_CONFIGS = {
         "hidden_layer_nn": 64,
     },
 }
+
 FILTER_PHRASES = [  # List of FAST.Farm phrases to filter from evaluation output
     "Running",
     "Copyright",
