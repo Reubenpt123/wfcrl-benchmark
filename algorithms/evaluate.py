@@ -4,19 +4,12 @@ import time
 from dataclasses import dataclass
 import pickle
 from typing import Union
-
 import numpy as np
 import pandas as pd
 from pathlib import Path
 import torch
-
-# Get project root directory
-PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 import tyro
-
-
 from wfcrl import environments as envs
-
 from extractors import VectorExtractor, DfacSPaceExtractor
 from utils import (
     eval_wind_rose,
@@ -27,6 +20,9 @@ from utils import (
     plot_env_history,
     prepare_eval_windrose,
 )
+
+# Get project root directory
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
 def recurrent_q_net_deterministic_act(q_network, observation, last_action):
     if last_action is None:
@@ -265,9 +261,9 @@ if __name__ == "__main__":
         else:
             def evaluate(eval_env, eval_agents):
                 return eval_policies(eval_env, eval_agents, get_deterministic_action)
-        env.reset(options={"wind_speed": 8, "wind_direction": 270})
+        # Wind parameters already set during env creation, no need to pass in reset
+        env.reset()
 
-    
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     start_time = time.time()
