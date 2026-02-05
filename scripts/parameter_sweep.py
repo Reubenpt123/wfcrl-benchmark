@@ -41,9 +41,12 @@ from scripts.sweep_config import (
     SEEDS,
     SHUTDOWN_DELAY_MINUTES,
     TESTING,
-    TOTAL_TIMESTEPS,
+    TOTAL_ITERATIONS,
+    USE_WINDROSE,
     WIND_DIRECTION,
     WIND_SPEED,
+    WINDROSE_DATA_PATH,
+    WINDROSE_NUM_BINS,
     VTK_WIND,
 )
 
@@ -60,7 +63,7 @@ class RunConfig:
     algorithm: str
     env_id: str
     episode_length: int
-    total_timesteps: int
+    total_iterations: int
     seed: int
     wind_speed: float = 8
     wind_direction: float = 270
@@ -71,9 +74,9 @@ class RunConfig:
     def get_run_id(self) -> str:
         """Generate unique identifier for this run."""
         if ALGORITHM_CONFIGS[self.algorithm].get("supports_episode_length", True):
-            return f"{self.algorithm}_{self.env_id}_el{self.episode_length}_tt{self.total_timesteps}_s{self.seed}"
+            return f"{self.algorithm}_{self.env_id}_el{self.episode_length}_ti{self.total_iterations}_s{self.seed}"
         else:
-            return f"{self.algorithm}_{self.env_id}_tt{self.total_timesteps}_s{self.seed}"
+            return f"{self.algorithm}_{self.env_id}_ti{self.total_iterations}_s{self.seed}"
     
     def get_eval_run_id(self, eval_env_id: str) -> str:
         """Generate unique identifier for an evaluation run.
@@ -85,9 +88,9 @@ class RunConfig:
             Unique ID that includes the evaluation environment
         """
         if ALGORITHM_CONFIGS[self.algorithm].get("supports_episode_length", True):
-            return f"{self.algorithm}_{self.env_id}_el{self.episode_length}_tt{self.total_timesteps}_s{self.seed}_eval_{eval_env_id}"
+            return f"{self.algorithm}_{self.env_id}_el{self.episode_length}_ti{self.total_iterations}_s{self.seed}_eval_{eval_env_id}"
         else:
-            return f"{self.algorithm}_{self.env_id}_tt{self.total_timesteps}_s{self.seed}_eval_{eval_env_id}"
+            return f"{self.algorithm}_{self.env_id}_ti{self.total_iterations}_s{self.seed}_eval_{eval_env_id}"
 
 
 @dataclass
@@ -97,7 +100,7 @@ class SweepConfig:
     algorithms: list[str]
     env_id: str
     episode_lengths: list[int] = field(default_factory=lambda: EPISODE_LENGTHS)
-    total_timesteps: list[int] = field(default_factory=lambda: TOTAL_TIMESTEPS)
+    total_iterations: list[int] = field(default_factory=lambda: TOTAL_ITERATIONS)
     seeds: list[int] = field(default_factory=lambda: SEEDS)
     wind_speed: float = WIND_SPEED
     wind_direction: float = WIND_DIRECTION
@@ -109,6 +112,12 @@ class SweepConfig:
     eval_seed: int = EVAL_SEED
     evaluation: str = EVALUATION
     """Evaluation mode: "floris" (FLORIS only), "fastfarm" (FAST.Farm only), or "both" (both simulators)"""
+    use_windrose: bool = USE_WINDROSE
+    """If True, use windrose for both training and evaluation"""
+    windrose_data_path: str = WINDROSE_DATA_PATH
+    """Path to wind data CSV file for windrose"""
+    windrose_num_bins: int = WINDROSE_NUM_BINS
+    """Number of bins for windrose evaluation"""
     max_workers: int = MAX_WORKERS
     resume: bool = RESUME
     """If True, skip completed runs and reuse existing models; if False, train everything from scratch"""
@@ -288,13 +297,13 @@ class ParameterSweep:
         configs = []
         for algo in self.config.algorithms:
             for episode_length in self.config.episode_lengths:
-                for total_timesteps in self.config.total_timesteps:
+                for total_iterations in self.config.total_iterations:
                     for seed in self.config.seeds:
                         run_config = RunConfig(
                             algorithm=algo,
                             env_id=self.config.env_id,
                             episode_length=episode_length,
-                            total_timesteps=total_timesteps,
+                            total_iterations=total_iterations,
                             seed=seed,
                             wind_speed=self.config.wind_speed,
                             wind_direction=self.config.wind_direction,
@@ -349,6 +358,19 @@ class ParameterSweep:
         print(f"🚀 Starting training: {run_id}")
         start_time = time.time()
 
+        # Calculate output directory - files will be created directly here
+        # Create runs subdirectory in sweep directory with algorithm folder
+        runs_subdir = self.sweep_dir / "runs" / run_config.algorithm
+        runs_subdir.mkdir(parents=True, exist_ok=True)
+        
+        # Create readable name: seed{seed}_el{episode_length}_ti{total_iterations}
+        readable_name = (
+            f"seed{run_config.seed}_"
+            f"el{run_config.episode_length}_"
+            f"ti{run_config.total_iterations}"
+        )
+        output_dir = runs_subdir / readable_name
+
         # Get algorithm script path
         algo_config = ALGORITHM_CONFIGS.get(run_config.algorithm)
         if not algo_config:
@@ -372,8 +394,8 @@ class ParameterSweep:
             str(script_path),
             "--env_id",
             run_config.env_id,
-             "--total_timesteps",
-            str(run_config.total_timesteps),
+            "--total_iterations",
+            str(run_config.total_iterations),
             "--seed",
             str(run_config.seed),
             "--wind_speed",
@@ -418,6 +440,14 @@ class ParameterSweep:
                         str(run_config.plot_load_ylim[1]),
                     ]
                 )
+        
+        # Add output directory to create files directly in sweep directory
+        cmd.extend(["--output_dir", str(output_dir)])
+        
+        # Add windrose parameters for training if enabled
+        if self.config.use_windrose:
+            cmd.extend(["--scenario", "windrose"])
+            cmd.extend(["--wind_data", str(PROJECT_ROOT / self.config.windrose_data_path)])
 
         # Execute training
         try:
@@ -433,31 +463,14 @@ class ParameterSweep:
                 print(f"❌ {error_msg}: {run_id}")
                 return {"status": "failed", "run_id": run_id, "error": error_msg}
 
-            # Construct run path directly from known parameters
-            # Get the exp_name from the script filename (e.g., "baseline_ippo" from "algorithms/baseline_ippo.py")
-            script_path = ALGORITHM_CONFIGS[run_config.algorithm]["script"]
-            exp_name = Path(script_path).stem  # e.g., "baseline_ippo", "ifac", etc.
-            
-            if ALGORITHM_CONFIGS[run_config.algorithm].get("supports_episode_length", True):
-                run_name = f"{run_config.env_id}__{exp_name}__seed{run_config.seed}__el{run_config.episode_length}__tt{run_config.total_timesteps}"
-            else:
-                # For ifac/ifppo which don't have episode_length
-                run_name = f"{run_config.env_id}__{exp_name}__seed{run_config.seed}__tt{run_config.total_timesteps}"
-            
-            run_path = PROJECT_ROOT / "runs" / run_name
-            
-            # Verify the path exists
-            if not run_path.exists():
-                print(f"⚠️  Warning: Expected run path does not exist: {run_path}")
+            # Verify the output directory was created
+            run_path = str(output_dir)
+            if not output_dir.exists():
+                print(f"⚠️  Warning: Expected output directory does not exist: {output_dir}")
                 run_path = None
-            else:
-                run_path = str(run_path)
 
             duration = time.time() - start_time
             print(f"✅ Completed training: {run_id} ({duration:.1f}s)")
-
-            # Organise run into sweep directory
-            organised_path = self._organise_run(run_path, run_config)
 
             # Save progress
             self._save_progress(run_id)
@@ -465,7 +478,7 @@ class ParameterSweep:
             return {
                 "status": "success",
                 "run_id": run_id,
-                "run_path": organised_path if organised_path else run_path,
+                "run_path": run_path,
                 "duration": duration,
             }
 
@@ -477,7 +490,10 @@ class ParameterSweep:
             return {"status": "error", "run_id": run_id, "error": str(e)}
 
     def _organise_run(self, run_path: Optional[str], run_config: RunConfig, copy_only: bool = False) -> Optional[str]:
-        """Move or copy a completed run directory into the sweep directory with a readable name.
+        """Copy a completed run directory into the sweep directory with a readable name.
+        
+        Note: New training runs are created directly in the sweep directory via --output_dir.
+        This method is now primarily used for copying existing models from other sweeps.
         
         Args:
             run_path: Path to the run directory
@@ -498,11 +514,11 @@ class ParameterSweep:
         runs_subdir = self.sweep_dir / "runs" / run_config.algorithm
         runs_subdir.mkdir(parents=True, exist_ok=True)
         
-        # Create readable name: seed{seed}_el{episode_length}_tt{total_timesteps}
+        # Create readable name: seed{seed}_el{episode_length}_ti{total_iterations}
         readable_name = (
             f"seed{run_config.seed}_"
             f"el{run_config.episode_length}_"
-            f"tt{run_config.total_timesteps}"
+            f"ti{run_config.total_iterations}"
         )
         
         dest_path = runs_subdir / readable_name
@@ -545,11 +561,11 @@ class ParameterSweep:
         Returns:
             Path to the run directory if found, None otherwise
         """
-        # Build exact directory name pattern: seed{seed}_el{episode_length}_tt{total_timesteps}
+        # Build exact directory name pattern: seed{seed}_el{episode_length}_ti{total_iterations}
         target_dir_name = (
             f"seed{run_config.seed}_"
             f"el{run_config.episode_length}_"
-            f"tt{run_config.total_timesteps}"
+            f"ti{run_config.total_iterations}"
         )
         
         # Search pattern: parameter_sweeps/{*}/runs/{algorithm}/{target_dir_name}
@@ -577,78 +593,6 @@ class ParameterSweep:
                         print(f"   ⚠️  Skipping {target_path} - algorithm mismatch")
         
         return None
-
-    def _move_fastfarm_files(self, eval_env_id: str, start_time: float, run_path: str):
-        """Move FAST.Farm case files from __simul__/fastfarm directory to the run folder.
-        
-        Args:
-            eval_env_id: Environment ID being evaluated (e.g., Dec_Ablaincourt_Fastfarm)
-            start_time: Timestamp when evaluation started (to filter old files)
-            run_path: Path to the run directory where FAST.Farm files should be stored
-        """
-        import shutil
-        
-        # Only for FAST.Farm evaluations
-        if "Fastfarm" not in eval_env_id:
-            return
-        
-        # Look for FAST.Farm case directories in __simul__/fastfarm/
-        simul_dir = PROJECT_ROOT / "__simul__" / "fastfarm"
-        
-        if not simul_dir.exists():
-            return
-        
-        # Find all FAST.Farm case directories created after the evaluation started
-        # Case directory names include timestamp: FastFarm__37s__7T_1765295676.3268354
-        all_case_dirs = [d for d in simul_dir.iterdir() if d.is_dir()]
-        
-        # Filter by creation time AND by timestamp in filename
-        case_dirs = []
-        for d in all_case_dirs:
-            # Extract timestamp from directory name (after last underscore)
-            try:
-                timestamp_str = d.name.split('_')[-1]
-                dir_timestamp = float(timestamp_str)
-                # Only include if created during this evaluation (with 1 second buffer before)
-                if dir_timestamp >= (start_time - 1.0):
-                    case_dirs.append(d)
-            except (ValueError, IndexError):
-                # If we can't parse timestamp, check file creation time as fallback
-                if d.stat().st_mtime >= start_time:
-                    case_dirs.append(d)
-        
-        if not case_dirs:
-            return
-        
-        # Create destination directory in the run folder
-        dest_base = Path(run_path) / "fastfarm_evaluation"
-        dest_base.mkdir(parents=True, exist_ok=True)
-        
-        # Move each case directory
-        moved_count = 0
-        for case_dir in case_dirs:
-            try:
-                # Use the case directory name (e.g., FastFarm__37s__7T_1765295676.3268354)
-                case_name = case_dir.name
-                dest_dir = dest_base / case_name
-                
-                # Remove existing directory if present
-                if dest_dir.exists():
-                    shutil.rmtree(dest_dir)
-                
-                # Move the entire case directory (includes VTK files and all config files)
-                shutil.move(str(case_dir), str(dest_dir))
-                moved_count += 1
-            except Exception as e:
-                print(f"   ❌ Could not move case directory {case_dir.name}: {e}")
-        
-        if moved_count > 0:
-            # Clean up the simul directory if it's empty
-            try:
-                if not any(simul_dir.iterdir()):
-                    simul_dir.rmdir()
-            except Exception:
-                pass  # Don't fail if cleanup doesn't work
 
     def _check_and_copy_existing_evaluation(self, run_path: str, eval_env_id: str) -> bool:
         """Check if evaluation already exists in the run path and is complete.
@@ -746,8 +690,8 @@ class ParameterSweep:
             run_path,
             "--episode_length",
             str(self.config.eval_episode_length),
-            "--training_timesteps",
-            str(run_config.total_timesteps),
+            "--training_iterations",
+            str(run_config.total_iterations),
             "--training_episode_length",
             str(run_config.episode_length),
             "--training_seed",
@@ -790,6 +734,18 @@ class ParameterSweep:
         # Add VTK wind generation if enabled
         if run_config.vtk_wind:
             cmd.append("--vtk_wind")
+        
+        # Add windrose parameters for evaluation if enabled
+        if self.config.use_windrose:
+            cmd.extend(["--scenario", "windrose"])
+            cmd.extend(["--wind_data", str(PROJECT_ROOT / self.config.windrose_data_path)])
+        
+        # For FAST.Farm evaluations, specify output directory directly
+        # This avoids needing to move files after evaluation
+        fastfarm_output_dir = None
+        if "Fastfarm" in eval_env_id:
+            fastfarm_output_dir = str(Path(run_path) / "fastfarm_evaluation")
+            cmd.extend(["--fastfarm_output_dir", fastfarm_output_dir])
 
         try:
             # When filtering is on, capture and filter, otherwise just stream
@@ -877,10 +833,6 @@ class ParameterSweep:
             
             print(f"✅ Evaluation complete: {eval_run_id}")
             
-            # Move FAST.Farm files if this is a FAST.Farm evaluation
-            if "Fastfarm" in eval_env_id:
-                self._move_fastfarm_files(eval_env_id, eval_start_time, run_path)
-            
             # Save evaluation progress
             self._save_progress(eval_run_id, progress_type="evaluation")
             
@@ -924,11 +876,16 @@ class ParameterSweep:
             f"Episode lengths: {', '.join(map(str, self.config.episode_lengths))}"
         )
         print(
-            f"Total timesteps: {', '.join(map(str, self.config.total_timesteps))}"
+            f"Total iterations: {', '.join(map(str, self.config.total_iterations))}"
         )
         print(f"Seeds: {', '.join(map(str, self.config.seeds))}")
         print(f"Max parallel workers: {self.config.max_workers}")
         print(f"Resume mode: {'enabled' if self.config.resume else 'disabled'}")
+        print(f"Evaluation mode: {self.config.evaluation}")
+        print(f"Windrose mode: {'enabled' if self.config.use_windrose else 'disabled'}")
+        if self.config.use_windrose:
+            print(f"  - Wind data: {self.config.windrose_data_path}")
+            print(f"  - Number of bins: {self.config.windrose_num_bins}")
         print(f"\n{'='*60}\n")
 
         # Track results
@@ -1193,7 +1150,7 @@ def main(
     algorithms: list[str] = ALGORITHMS,
     env_id: str = ENV_ID,
     episode_lengths: list[int] = EPISODE_LENGTHS,
-    total_timesteps: list[int] = TOTAL_TIMESTEPS,
+    total_iterations: list[int] = TOTAL_ITERATIONS,
     seeds: list[int] = SEEDS,
     wind_speed: float = WIND_SPEED,
     wind_direction: float = WIND_DIRECTION,
@@ -1220,7 +1177,7 @@ def main(
                    Options: ippo, mappo, ifac, ifppo, idqn, idrqn, qmix
         env_id: Environment ID for training (e.g., Dec_Ablaincourt_Floris, Dec_Turb3_Row1_Floris)
         episode_lengths: List of episode lengths to sweep over
-        total_timesteps: List of total timesteps to sweep over
+        total_iterations: List of total iterations to sweep over
         seeds: List of random seeds to use
         wind_speed: Wind speed in m/s (default: 8)
         wind_direction: Wind direction in degrees, meteorological convention (default: 270)
@@ -1266,7 +1223,7 @@ def main(
         # Long-running sweep with auto-shutdown
         python parameter_sweep_v2.py \\
             --algorithms ippo mappo idqn idrqn qmix \\
-            --total_timesteps 50000 100000 \\
+            --total_iterations 50000 100000 \\
             --seeds 1 2 3 4 5 \\
             --auto_shutdown True \\
             --shutdown_delay_minutes 10
@@ -1275,7 +1232,7 @@ def main(
         python parameter_sweep_v2.py --algorithms ippo mappo ifac \\
             --env_id Dec_Turb3_Row1_Floris \\
             --episode_lengths 100 200 300 \\
-            --total_timesteps 10000 50000 \\
+            --total_iterations 10000 50000 \\
             --seeds 1 2 3 4 5
 
         # Disable resume to force re-training even if models exist
@@ -1312,7 +1269,7 @@ def main(
         algorithms=algorithms,
         env_id=env_id,
         episode_lengths=episode_lengths,
-        total_timesteps=total_timesteps,
+        total_iterations=total_iterations,
         seeds=seeds,
         wind_speed=wind_speed,
         wind_direction=wind_direction,

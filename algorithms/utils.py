@@ -24,7 +24,7 @@ def get_env_history(env):
     return yaws, powers, loads, rewards
 
 def plot_env_history(env, env_name=None, algorithm=None, power_ylim=None, load_ylim=None, 
-                     total_timesteps=None, episode_length=None, seed=None):
+                     total_iterations=None, episode_length=None, seed=None):
     """
     Plot environment history with yaw angles, power output, and loading indicator.
     
@@ -34,7 +34,7 @@ def plot_env_history(env, env_name=None, algorithm=None, power_ylim=None, load_y
         algorithm: Optional algorithm name for title
         power_ylim: Optional tuple (ymin, ymax) for power plot y-axis limits
         load_ylim: Optional tuple (ymin, ymax) for load plot y-axis limits
-        total_timesteps: Optional total training timesteps for title
+        total_iterations: Optional total training iterations for title
         episode_length: Optional episode length for title
         seed: Optional seed number for title
     """
@@ -42,7 +42,7 @@ def plot_env_history(env, env_name=None, algorithm=None, power_ylim=None, load_y
     fig, ax = plt.subplots(ncols=3, figsize=(15, 5))
     
     # Add overall title if environment and/or algorithm provided
-    if env_name or algorithm or total_timesteps or episode_length or seed is not None:
+    if env_name or algorithm or total_iterations or episode_length or seed is not None:
         title_parts = []
         if env_name:
             title_parts.append(f"Environment: {env_name}")
@@ -50,8 +50,8 @@ def plot_env_history(env, env_name=None, algorithm=None, power_ylim=None, load_y
             title_parts.append(f"Algorithm: {algorithm.upper()}")
         if seed is not None:
             title_parts.append(f"Seed: {seed}")
-        if total_timesteps:
-            title_parts.append(f"Total Timesteps: {total_timesteps:,}")
+        if total_iterations:
+            title_parts.append(f"Total Iterations: {total_iterations:,}")
         if episode_length:
             title_parts.append(f"Episode Lengths: {episode_length}")
         fig.suptitle(" | ".join(title_parts), fontsize=14, fontweight='bold')
@@ -79,7 +79,7 @@ def plot_env_history(env, env_name=None, algorithm=None, power_ylim=None, load_y
     
     # Remove whitespace around the figure edges
     fig.tight_layout()
-    if env_name or algorithm or total_timesteps or episode_length:
+    if env_name or algorithm or total_iterations or episode_length:
         # If we have a title, adjust to make room for it
         plt.subplots_adjust(top=0.92)
     

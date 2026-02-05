@@ -2,7 +2,7 @@ import os
 import random
 import time
 from dataclasses import dataclass
-from typing import Union
+from typing import Optional, Union
 
 from dotenv import load_dotenv
 import gymnasium as gym
@@ -55,6 +55,8 @@ class Args:
     """the entity (team) of wandb's project"""
     save_model: bool = True
     """whether to save model into the `runs/{run_name}` folder"""
+    output_dir: Optional[str] = None
+    """Output directory for run files (if None, uses default runs/ folder)"""
     freq_eval: int = 50
     """Number of iterations between eval"""
     wind_data: str = str(PROJECT_ROOT / "data" / "smarteole.csv")
@@ -71,8 +73,8 @@ class Args:
     # Algorithm specific arguments
     env_id: str = "Dec_Turb3_Row1_Floris"
     """the id of the environment"""
-    total_timesteps: int = int(1e6)
-    """total timesteps of the experiments"""
+    total_iterations: int = int(1e6)
+    """total training iterations of the experiment"""
     learning_rate: float = 2.5e-4
     """the learning rate of the optimizer"""
     gamma: float = 0.99
@@ -166,7 +168,7 @@ if __name__ == "__main__":
     env = envs.make(
         args.env_id,
         controls=controls, 
-        max_num_steps=args.episode_length,
+        episode_length=args.episode_length,
         continuous_control=False, # discrete action space for DQN
         load_coef=args.load_coef,
         wind_speed=args.wind_speed,
@@ -174,7 +176,15 @@ if __name__ == "__main__":
     )
     args.num_agents = env.num_turbines
     args.reward_shaping = ""
-    run_name = f"{args.env_id}__{args.exp_name}__seed{args.seed}__el{args.episode_length}__tt{args.total_timesteps}"
+    run_name = f"{args.env_id}__{args.exp_name}__seed{args.seed}__el{args.episode_length}__ti{args.total_iterations}"
+    
+    # Determine output directory - use custom output_dir if provided, otherwise default to runs/
+    if args.output_dir is not None:
+        run_dir = Path(args.output_dir)
+    else:
+        run_dir = PROJECT_ROOT / "runs" / run_name
+    run_dir.mkdir(parents=True, exist_ok=True)
+    
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
     args.device = device
     if args.track:
@@ -182,7 +192,7 @@ if __name__ == "__main__":
         import wandb
         load_dotenv()
         wandb.login(key=os.environ["WANDB_API_KEY"])
-        wandb.tensorboard.patch(root_logdir=str(PROJECT_ROOT / "runs" / run_name), pytorch=False, tensorboard_x=False, save=False)
+        wandb.tensorboard.patch(root_logdir=str(run_dir), pytorch=False, tensorboard_x=False, save=False)
         wandb.init(
             project=args.wandb_project_name,
             entity=args.wandb_entity,
@@ -192,9 +202,9 @@ if __name__ == "__main__":
             monitor_gym=True,
             save_code=True,
         )
-    writer = LocalSummaryWriter(str(PROJECT_ROOT / "runs" / run_name), )
+    writer = LocalSummaryWriter(str(run_dir), )
     writer.add_config(vars(args))
-    model_path = str(PROJECT_ROOT / "runs" / run_name / f"{args.exp_name}.cleanrl_model")
+    model_path = str(run_dir / f"{args.exp_name}.cleanrl_model")
     # TRY NOT TO MODIFY
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -261,33 +271,33 @@ if __name__ == "__main__":
     last_done = False
     last_progress_pct = -1  # Track last displayed progress percentage
 
-    for global_step in range(args.total_timesteps):
+    for training_step in range(args.total_iterations):
         # Progress counter - only display at 1% intervals
-        progress_pct = int((global_step + 1) / args.total_timesteps * 100)
+        progress_pct = int((training_step + 1) / args.total_iterations * 100)
         if progress_pct > last_progress_pct:
-            print(f"Progress: {progress_pct}% (Step {global_step + 1}/{args.total_timesteps})")
+            print(f"Progress: {progress_pct}% (Step {training_step + 1}/{args.total_iterations})")
             last_progress_pct = progress_pct
         
         # progressively replace old data to handle non stationarity
         if last_done:
-            writer.add_scalar(f"farm/episode_reward", float(cumul_rewards), global_step)
-            writer.add_scalar(f"farm/episode_power", float(cumul_power) / env.max_num_steps, global_step)
-            writer.add_scalar(f"farm/episode_load", float(cumul_load) / env.max_num_steps, global_step)
-            writer.add_scalar(f"charts/epsilon", epsilon, global_step)
+            writer.add_scalar(f"farm/episode_reward", float(cumul_rewards), training_step)
+            writer.add_scalar(f"farm/episode_power", float(cumul_power) / env.episode_length, training_step)
+            writer.add_scalar(f"farm/episode_load", float(cumul_load) / env.episode_length, training_step)
+            writer.add_scalar(f"charts/epsilon", epsilon, training_step)
             cumul_rewards = cumul_power = cumul_load = 0
             if (episode_id % args.freq_eval == 0):
                 print(f"Evaluating at iteration {episode_id}")
                 eval_score = evaluate(env, q_networks)
                 print("Episode:", episode_id, "Score: ", eval_score)
-                writer.add_scalar(f"eval/eval_score", eval_score, global_step)
+                writer.add_scalar(f"eval/eval_score", eval_score, training_step)
             episode_id += 1
             dones[buffer_id, :] = torch.tensor(1, device=device)
             env.reset(options={"wind_speed": 8, "wind_direction": 270})
 
-        buffer_id = global_step % args.buffer_size
+        buffer_id = training_step % args.buffer_size
 
         # ALGO LOGIC: put action logic here
-        epsilon = linear_schedule(args.start_e, args.end_e, args.exploration_fraction * args.total_timesteps, global_step)
+        epsilon = linear_schedule(args.start_e, args.end_e, args.exploration_fraction * args.total_iterations, training_step)
         
         # ALGO LOGIC: action logic
         powers = []
@@ -316,11 +326,11 @@ if __name__ == "__main__":
                     loads.append(float(np.mean(np.abs(infos["load"]))))
                 if args.debug_log:
                     if "power" in infos:
-                        writer.add_scalar(f"farm/power_T{idagent}", infos["power"], global_step)
+                        writer.add_scalar(f"farm/power_T{idagent}", infos["power"], training_step)
                     if "load" in infos:
-                        writer.add_scalar(f"farm/load_T{idagent}", sum(np.abs(infos["load"])), global_step)
-                    writer.add_scalar(f"farm/controls/yaw_T{idagent}", last_obs[0].item(), global_step)
-                    writer.add_scalar(f"charts/action/yaw_T{idagent}", action[0], global_step)
+                        writer.add_scalar(f"farm/load_T{idagent}", sum(np.abs(infos["load"])), training_step)
+                    writer.add_scalar(f"farm/controls/yaw_T{idagent}", last_obs[0].item(), training_step)
+                    writer.add_scalar(f"charts/action/yaw_T{idagent}", action[0], training_step)
 
                 if last_done:
                     env.step(None)
@@ -328,9 +338,9 @@ if __name__ == "__main__":
                     env.step(action_space_extractor.make_dict(action))
 
         if args.debug_log:
-            writer.add_scalar(f"farm/reward", float(reward[0]), global_step)
+            writer.add_scalar(f"farm/reward", float(reward[0]), training_step)
             if "power" in infos:
-                writer.add_scalar(f"farm/power_total", sum(powers), global_step)
+                writer.add_scalar(f"farm/power_total", sum(powers), training_step)
         
         cumul_power += sum(powers)
         cumul_load += sum(loads)
@@ -339,14 +349,14 @@ if __name__ == "__main__":
         for idagent, agent_name in enumerate(agents_list):
             next_obs[buffer_id, idagent] = torch.tensor(partial_obs_extractor(env.observe(agent_name)), device=device)
         # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
-        if global_step > args.learning_starts:
-            if global_step % args.train_frequency == 0:
+        if training_step > args.learning_starts:
+            if training_step % args.train_frequency == 0:
 
                 # data = rb.sample(args.batch_size)
 
         # Optimizing the value network
                 for idagent, q_network in enumerate(q_networks):
-                    b_inds = np.random.choice(np.arange(min(global_step, args.buffer_size)), args.batch_size)
+                    b_inds = np.random.choice(np.arange(min(training_step, args.buffer_size)), args.batch_size)
 
                     with torch.no_grad():
                         target_max, _ = target_q_networks[idagent](next_obs[b_inds, idagent]).max(dim=1)
@@ -354,10 +364,10 @@ if __name__ == "__main__":
                     old_val = q_network(obs[b_inds, idagent]).gather(1, actions[b_inds, idagent]).squeeze()
                     loss = F.mse_loss(td_target, old_val)
 
-                    if (global_step - args.learning_starts) % (args.train_frequency * 50) == 0:
-                        writer.add_scalar(f"losses/agent_{idagent}/td_loss", loss.item(), global_step)
-                        writer.add_scalar(f"losses/agent_{idagent}/q_values", old_val.mean().item(), global_step)
-                        # print("SPS:", int(global_step / (time.time() - start_time)))
+                    if (training_step - args.learning_starts) % (args.train_frequency * 50) == 0:
+                        writer.add_scalar(f"losses/agent_{idagent}/td_loss", loss.item(), training_step)
+                        writer.add_scalar(f"losses/agent_{idagent}/q_values", old_val.mean().item(), training_step)
+                        # print("SPS:", int(training_step / (time.time() - start_time)))
 
                     # optimize the model
                     optimizers[idagent].zero_grad()
@@ -365,16 +375,16 @@ if __name__ == "__main__":
                     optimizers[idagent].step()
 
                     # update target network
-            if global_step % args.target_network_frequency == 0:
+            if training_step % args.target_network_frequency == 0:
                 for q_network, target_network in zip(q_networks, target_q_networks):
                     for target_network_param, q_network_param in zip(target_network.parameters(), q_network.parameters()):
                         target_network_param.data.copy_(
                             args.tau * q_network_param.data + (1.0 - args.tau) * target_network_param.data
                         )
 
-        if (global_step % 10000 == 0):
-            print("steps per second:", int(global_step / (time.time() - start_time)))
-            writer.add_scalar("charts/steps per second", int(global_step / (time.time() - start_time)), global_step)
+        if (training_step % 10000 == 0):
+            print("steps per second:", int(training_step / (time.time() - start_time)))
+            writer.add_scalar("charts/steps per second", int(training_step / (time.time() - start_time)), training_step)
             if args.save_model:
                 for idagent, q_network in enumerate(q_networks):
                     torch.save(q_network.state_dict(), model_path+f"_{idagent}")
@@ -393,7 +403,7 @@ if __name__ == "__main__":
     eval_env = envs.make(
         args.env_id,
         controls=controls, 
-        max_num_steps=args.episode_length,
+        episode_length=args.episode_length,
         continuous_control=False,
         load_coef=args.load_coef,
         wind_speed=args.wind_speed,
@@ -401,7 +411,7 @@ if __name__ == "__main__":
     )
     
     if windrose_eval:
-        eval_env.reset(args.seed+global_step)
+        eval_env.reset(args.seed+training_step)
     else:
         eval_env.reset(options={"wind_speed": 8, "wind_direction": 270})
     
@@ -413,13 +423,13 @@ if __name__ == "__main__":
     load_ylim = args.plot_load_ylim if args.plot_load_ylim else None
     fig = plot_env_history(eval_env, env_name=args.env_id, algorithm="idqn", 
                           power_ylim=power_ylim, load_ylim=load_ylim,
-                          total_timesteps=args.total_timesteps, episode_length=args.episode_length,
+                          total_iterations=args.total_iterations, episode_length=args.episode_length,
                           seed=args.seed)
-    fig.savefig(str(PROJECT_ROOT / "runs" / run_name / "plot.png"))
+    fig.savefig(str(run_dir / "plot.png"))
     eval_env.close()
 
     # Save the run name for batch scripts to find it
     most_recent_path = PROJECT_ROOT / "scripts" / "most_recent_models" / "idqn_path.txt"
     most_recent_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
     with open(most_recent_path, "w") as file:
-        file.write(str(PROJECT_ROOT / "runs" / run_name))
+        file.write(str(run_dir))

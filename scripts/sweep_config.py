@@ -19,30 +19,35 @@ ENVIRONMENTS = {
 
 # Environment and algorithm selection
 ENV_ID = ENVIRONMENTS["ablaincourt"]
-ALGORITHMS = ["ifppo"] #, "ifppo"]
+ALGORITHMS = ["ippo"] #, "ifppo"]
 # Options: "ippo", "mappo", "ifac", "ifppo", "idqn", "idrqn", "qmix"
 
 # Training parameters
 EPISODE_LENGTHS = [100]  # [50, 100, 400]
-TOTAL_TIMESTEPS = [300]  # [3000, 10000, 50000, 100000]
+TOTAL_ITERATIONS = [50000]  # [3000, 10000, 50000, 100000]
 SEEDS = [1]  # [1, 2, 3]
 WIND_SPEED = 9  # Wind speed in m/s
-WIND_DIRECTION = 0  # Wind direction in degrees (meteorological convention: 0=N, 90=E, 180=S, 270=W)
+WIND_DIRECTION = -45  # Wind direction in degrees (meteorological convention: 0=N, 90=E, 180=S, 270=W)
 
 # Plot parameters
 PLOT_POWER_YLIM = (7.0, 9.5)  # (7,9.5) is appropriate for Ablaincourt
 PLOT_LOAD_YLIM = (5.0, 8.0)   # (5,8) is appropriate for Ablaincourt
 
 # VTK wind output (for FAST.Farm visualization)
-VTK_WIND = True  # Set to True to generate VTK wind field files for ParaView visualization
+VTK_WIND = False  # Set to True to generate VTK wind field files for ParaView visualization
 
 # ================================
 # EVALUATION PARAMETERS
 # ================================
 
-EVAL_EPISODE_LENGTH = 2
+EVAL_EPISODE_LENGTH = 60 #  each step is 3 seconds
 EVAL_SEED = 1
 EVALUATION = "fastfarm"  # Options: "floris", "fastfarm", "both"
+
+# Windrose settings
+USE_WINDROSE = True  # If True, use windrose for both training and evaluation
+WINDROSE_DATA_PATH = "data/smarteole.csv"  # Path to wind data CSV file for windrose
+WINDROSE_NUM_BINS = 5  # Number of bins for windrose evaluation
 
 # ================================
 # EXECUTION SETTINGS

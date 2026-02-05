@@ -2,7 +2,7 @@ import os
 import random
 import time
 from dataclasses import dataclass
-from typing import Union
+from typing import Optional, Union
 
 from dotenv import load_dotenv
 import gymnasium as gym
@@ -55,6 +55,8 @@ class Args:
     """the entity (team) of wandb's project"""
     save_model: bool = True
     """whether to save model into the `runs/{run_name}` folder"""
+    output_dir: Optional[str] = None
+    """Output directory for run files (if None, uses default runs/ folder)"""
     wind_data: str = str(PROJECT_ROOT / "data" / "smarteole.csv")
     """Path to wind data for wind rose evaluation"""
     load_coef: float = 1
@@ -69,8 +71,8 @@ class Args:
     # Algorithm specific arguments
     env_id: str = "Dec_Turb3_Row1_Floris"
     """the id of the environment"""
-    total_timesteps: int = int(1e5)
-    """total timesteps of the experiments"""
+    total_iterations: int = int(1e5)
+    """total training iterations of the experiment"""
     learning_rate: float = 3e-4 #7e-4 #
     """the learning rate of the optimiser"""
     gamma: float = 0.99
@@ -190,19 +192,27 @@ if __name__ == "__main__":
     controls = {'yaw': (-30, 30, 1)}  # Limit yaw angles to ±30 degrees (low, high, step)
     assert args.scenario in ["constant", "windrose"]
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
-    args.num_iterations = args.total_timesteps // args.batch_size
+    args.num_iterations = args.total_iterations // args.batch_size
     num_episodes = int(np.ceil(args.batch_size / (args.episode_length-1)))
     env = envs.make(
         args.env_id,
         controls=controls, 
-        max_num_steps=args.episode_length,
+        episode_length=args.episode_length,
         load_coef=args.load_coef,
         wind_speed=args.wind_speed,
         wind_direction=args.wind_direction
     )
     args.num_agents = env.num_turbines
     args.reward_shaping = ""
-    run_name = f"{args.env_id}__{args.exp_name}__seed{args.seed}__el{args.episode_length}__tt{args.total_timesteps}"
+    run_name = f"{args.env_id}__{args.exp_name}__seed{args.seed}__el{args.episode_length}__ti{args.total_iterations}"
+    
+    # Determine output directory - use custom output_dir if provided, otherwise default to runs/
+    if args.output_dir is not None:
+        run_dir = Path(args.output_dir)
+    else:
+        run_dir = PROJECT_ROOT / "runs" / run_name
+    run_dir.mkdir(parents=True, exist_ok=True)
+    
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
     args.device = device
     if args.track:
@@ -210,7 +220,7 @@ if __name__ == "__main__":
         import wandb
         load_dotenv()
         wandb.login(key=os.environ["WANDB_API_KEY"])
-        wandb.tensorboard.patch(root_logdir=str(PROJECT_ROOT / "runs" / run_name), pytorch=False, tensorboard_x=False, save=False)
+        wandb.tensorboard.patch(root_logdir=str(run_dir), pytorch=False, tensorboard_x=False, save=False)
         wandb.init(
             project=args.wandb_project_name,
             entity=args.wandb_entity,
@@ -220,9 +230,9 @@ if __name__ == "__main__":
             monitor_gym=True,
             save_code=True,
         )
-    writer = LocalSummaryWriter(str(PROJECT_ROOT / "runs" / run_name))
+    writer = LocalSummaryWriter(str(run_dir))
     writer.add_config(vars(args))
-    model_path = str(PROJECT_ROOT / "runs" / run_name / f"{args.exp_name}.cleanrl_model")
+    model_path = str(run_dir / f"{args.exp_name}.cleanrl_model")
     # TRY NOT TO MODIFY
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -287,7 +297,7 @@ if __name__ == "__main__":
     values = torch.zeros((args.episode_length, num_episodes, args.num_agents)).to(device)
 
     # TRY NOT TO MODIFY: start the game
-    global_step = 0
+    training_step = 0
     start_time = time.time()    
     last_progress_pct = -1  # Track last displayed progress percentage
 
@@ -302,7 +312,7 @@ if __name__ == "__main__":
             print(f"Evaluating at iteration {iteration}")
             eval_score = evaluate(env, agents)
             print("Episode:", iteration, "Score: ", eval_score)
-            writer.add_scalar(f"eval/eval_score", eval_score, global_step)
+            writer.add_scalar(f"eval/eval_score", eval_score, training_step)
 
         last_done = False
         # Annealing the rate if instructed to do so.
@@ -317,16 +327,16 @@ if __name__ == "__main__":
             if last_done:
                 episode_id += 1
                 pt = 0
-                writer.add_scalar(f"farm/episode_reward", float(cumul_rewards), global_step)
-                writer.add_scalar(f"farm/episode_power", float(cumul_power) / args.episode_length, global_step)
-                writer.add_scalar(f"farm/episode_load", float(cumul_load) / args.episode_length, global_step)
+                writer.add_scalar(f"farm/episode_reward", float(cumul_rewards), training_step)
+                writer.add_scalar(f"farm/episode_power", float(cumul_power) / args.episode_length, training_step)
+                writer.add_scalar(f"farm/episode_load", float(cumul_load) / args.episode_length, training_step)
             if last_done or step == 0:
                 if windrose_eval:
-                    env.reset(args.seed+global_step)
+                    env.reset(args.seed+training_step)
                 else:
                     env.reset(options={"wind_speed": 8, "wind_direction": 270})
                 cumul_rewards = cumul_power = cumul_load = 0
-            global_step += 1
+            training_step += 1
             powers = []
             loads = []
             with torch.no_grad():
@@ -353,11 +363,11 @@ if __name__ == "__main__":
                         loads.append(float(np.mean(np.abs(infos["load"]))))
                     if args.debug_log:
                         if "power" in infos:
-                            writer.add_scalar(f"farm/power_T{idagent}", infos["power"], global_step)
+                            writer.add_scalar(f"farm/power_T{idagent}", infos["power"], training_step)
                         if "load" in infos:
-                            writer.add_scalar(f"farm/load_T{idagent}", sum(np.abs(infos["load"])), global_step)
-                        writer.add_scalar(f"farm/controls/yaw_T{idagent}", last_obs[0].item(), global_step)
-                        writer.add_scalar(f"charts/action/yaw_T{idagent}", action[0], global_step)
+                            writer.add_scalar(f"farm/load_T{idagent}", sum(np.abs(infos["load"])), training_step)
+                        writer.add_scalar(f"farm/controls/yaw_T{idagent}", last_obs[0].item(), training_step)
+                        writer.add_scalar(f"charts/action/yaw_T{idagent}", action[0], training_step)
 
                     if last_done:
                         env.step(None)
@@ -365,9 +375,9 @@ if __name__ == "__main__":
                         env.step(action_space_extractor.make_dict(action))
                     
             if args.debug_log:
-                writer.add_scalar(f"farm/reward", float(reward[0]), global_step)  
+                writer.add_scalar(f"farm/reward", float(reward[0]), training_step)  
                 if "power" in infos:
-                    writer.add_scalar(f"farm/power_total", sum(powers), global_step)
+                    writer.add_scalar(f"farm/power_total", sum(powers), training_step)
             step += int(not last_done)
             pt += 1
             cumul_power += sum(powers)
@@ -441,12 +451,12 @@ if __name__ == "__main__":
                     actor_optimisers[idagent].step()
 
                     if (iteration % 5 == 0) and (epoch == args.update_epochs-1) and (end >= args.batch_size-1):
-                        writer.add_scalar(f"charts/agent_{idagent}/learning_rate", actor_optimisers[idagent].param_groups[0]["lr"], global_step)
-                        writer.add_scalar(f"losses/agent_{idagent}/policy_loss", pg_loss.item(), global_step)
-                        writer.add_scalar(f"losses/agent_{idagent}/entropy", entropy_loss.item(), global_step)
-                        writer.add_scalar(f"losses/agent_{idagent}/old_approx_kl", old_approx_kl.item(), global_step)
-                        writer.add_scalar(f"losses/agent_{idagent}/approx_kl", approx_kl.item(), global_step)
-                        writer.add_scalar(f"losses/agent_{idagent}/clipfrac", np.mean(clipfracs), global_step)
+                        writer.add_scalar(f"charts/agent_{idagent}/learning_rate", actor_optimisers[idagent].param_groups[0]["lr"], training_step)
+                        writer.add_scalar(f"losses/agent_{idagent}/policy_loss", pg_loss.item(), training_step)
+                        writer.add_scalar(f"losses/agent_{idagent}/entropy", entropy_loss.item(), training_step)
+                        writer.add_scalar(f"losses/agent_{idagent}/old_approx_kl", old_approx_kl.item(), training_step)
+                        writer.add_scalar(f"losses/agent_{idagent}/approx_kl", approx_kl.item(), training_step)
+                        writer.add_scalar(f"losses/agent_{idagent}/clipfrac", np.mean(clipfracs), training_step)
                 
                 # Global Value loss
                 # global_obs = b_obs[mb_inds, :].view(args.minibatch_size, -1)
@@ -478,8 +488,8 @@ if __name__ == "__main__":
         explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
         
         if iteration % 5 == 0:
-            writer.add_scalar(f"losses/value_loss", global_v_loss.item(), global_step)
-            writer.add_scalar(f"losses/explained_variance", explained_var, global_step)
+            writer.add_scalar(f"losses/value_loss", global_v_loss.item(), training_step)
+            writer.add_scalar(f"losses/explained_variance", explained_var, training_step)
     
         if (iteration % 100 == 0) and args.save_model:
             for idagent, agent in enumerate(agents):
@@ -487,8 +497,8 @@ if __name__ == "__main__":
             torch.save(shared_critic.state_dict(), model_path+f"_critic")
             print(f"model saved to {model_path}")
         
-            # print("steps per second:", int(global_step / (time.time() - start_time)))
-            writer.add_scalar("charts/steps per second", int(global_step / (time.time() - start_time)), global_step)
+            # print("steps per second:", int(training_step / (time.time() - start_time)))
+            writer.add_scalar("charts/steps per second", int(training_step / (time.time() - start_time)), training_step)
         
     env.close()
     for idagent, agent in enumerate(agents):
@@ -502,14 +512,14 @@ if __name__ == "__main__":
     eval_env = envs.make(
         args.env_id,
         controls=controls, 
-        max_num_steps=args.episode_length,
+        episode_length=args.episode_length,
         load_coef=args.load_coef,
         wind_speed=args.wind_speed,
         wind_direction=args.wind_direction
     )
     
     if windrose_eval:
-        eval_env.reset(args.seed+global_step)
+        eval_env.reset(args.seed+training_step)
     else:
         eval_env.reset(options={"wind_speed": 8, "wind_direction": 270})
     
@@ -521,13 +531,13 @@ if __name__ == "__main__":
     load_ylim = args.plot_load_ylim if args.plot_load_ylim else None
     fig = plot_env_history(eval_env, env_name=args.env_id, algorithm="mappo", 
                           power_ylim=power_ylim, load_ylim=load_ylim,
-                          total_timesteps=args.total_timesteps, episode_length=args.episode_length,
+                          total_iterations=args.total_iterations, episode_length=args.episode_length,
                           seed=args.seed)
-    fig.savefig(str(PROJECT_ROOT / "runs" / run_name / "plot.png"))
+    fig.savefig(str(run_dir / "plot.png"))
     eval_env.close()
 
     # Save the run name for batch scripts to find it
     most_recent_path = PROJECT_ROOT / "scripts" / "most_recent_models" / "mappo_path.txt"
     most_recent_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
     with open(most_recent_path, "w") as file:
-        file.write(str(PROJECT_ROOT / "runs" / run_name))
+        file.write(str(run_dir))

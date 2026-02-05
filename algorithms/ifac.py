@@ -2,7 +2,7 @@ import os
 import random
 import time
 from dataclasses import dataclass
-from typing import Union
+from typing import Optional, Union
 from pathlib import Path
 
 import gymnasium as gym
@@ -44,6 +44,8 @@ class Args:
     """the entity (team) of wandb's project"""
     save_model: bool = True
     """whether to save model into the `runs/{run_name}` folder"""
+    output_dir: Optional[str] = None
+    """Output directory for run files (if None, uses default runs/ folder)"""
     vtk_wind: bool = False
     """whether to generate vtk wind outputs or not"""
     wind_speed: float = 8
@@ -54,8 +56,8 @@ class Args:
     # Algorithm specific arguments
     env_id: str = "Dec_Turb3_Row1_Floris" #""Turb32_Row5_Floris
     """the id of the environment"""
-    total_timesteps: int = 2000
-    """total timesteps of the experiments"""
+    total_iterations: int = 2000
+    """total training iterations - equals episode length for IF algorithms (continuous episode)"""
     learning_rate: float = 3e-4 #7e-4 #
     """the learning rate of the optimiser"""
     gamma: float = 0.75
@@ -107,7 +109,7 @@ class Args:
     debug: bool = False
     """debug mode saves monitoring logs during training"""
     num_steps: int = 5000
-    """number of timesteps for buffer (set to total_timesteps at runtime)"""
+    """number of timesteps for buffer (set to total_iterations at runtime)"""
 
     # to be filled in runtime
     num_iterations: int = 0
@@ -196,22 +198,30 @@ class Agent(nn.Module):
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    # IFAC uses online updates, so num_steps = total_timesteps
-    args.num_steps = args.total_timesteps
+    # IFAC uses online updates, so num_steps = total_iterations
+    args.num_steps = args.total_iterations
     controls = {"yaw": (-args.yaw_max, args.yaw_max, args.action_bound)}
     # reward_shaper = FilteredStep(threshold=args.reward_tol)
     reward_shaper = RewardSum()
     env = envs.make(
         args.env_id,
         controls=controls, 
-        max_num_steps=args.total_timesteps, 
+        episode_length=args.total_iterations,  # One continuous episode
         reward_shaper=reward_shaper,
         vtk_wind=args.vtk_wind,
         wind_speed=args.wind_speed,
         wind_direction=args.wind_direction
     )
     args.num_agents = env.num_turbines
-    run_name = f"{args.env_id}__{args.exp_name}__seed{args.seed}__tt{args.total_timesteps}"
+    run_name = f"{args.env_id}__{args.exp_name}__seed{args.seed}__ti{args.total_iterations}"
+    
+    # Determine output directory - use custom output_dir if provided, otherwise default to runs/
+    if args.output_dir is not None:
+        run_dir = Path(args.output_dir)
+    else:
+        run_dir = PROJECT_ROOT / "runs" / run_name
+    run_dir.mkdir(parents=True, exist_ok=True)
+    
     if args.track:
         # os.environ["HTTPS_PROXY"] = "http://irsrvpxw1-std:8082"
         import wandb
@@ -224,7 +234,7 @@ if __name__ == "__main__":
             monitor_gym=True,
             save_code=True,
         )
-    writer = LocalSummaryWriter(f"runs/{run_name}")
+    writer = LocalSummaryWriter(str(run_dir))
     writer.add_config(vars(args))
     # TRY NOT TO MODIFY
     random.seed(args.seed)
@@ -265,20 +275,20 @@ if __name__ == "__main__":
     values = torch.zeros((args.num_steps, args.num_envs, args.num_agents)).to(device)
 
     # TRY NOT TO MODIFY: start the game
-    global_step = 0
+    training_step = 0
     start_time = time.time()
     # set single wind conditions for reproducibility
     env.reset(options={"wind_speed": 8, "wind_direction": 270})
     last_progress_pct = -1  # Track last displayed progress percentage
 
-    for step in range(1, args.total_timesteps):
+    for step in range(1, args.total_iterations):
         # Progress counter - only display at 1% intervals
-        progress_pct = int(step / args.total_timesteps * 100)
+        progress_pct = int(step / args.total_iterations * 100)
         if progress_pct > last_progress_pct:
-            print(f"Progress: {progress_pct}% (Step {step}/{args.total_timesteps})")
+            print(f"Progress: {progress_pct}% (Step {step}/{args.total_iterations})")
             last_progress_pct = progress_pct
 
-        global_step += args.num_envs
+        training_step += args.num_envs
         # obs = next_obs
 
         # ALGO LOGIC: action logic
@@ -300,17 +310,17 @@ if __name__ == "__main__":
                 rewards[step-1, :, idagent] = torch.tensor(reward).to(device).view(-1)
                 if "power" in infos:
                     powers.append(infos["power"])
-                    writer.add_scalar(f"farm/power_T{idagent}", infos["power"], global_step)
+                    writer.add_scalar(f"farm/power_T{idagent}", infos["power"], training_step)
                 if "load" in infos:
-                    writer.add_scalar(f"farm/load_T{idagent}", sum(np.abs(infos["load"])), global_step)
-                writer.add_scalar(f"farm/controls/yaw_T{idagent}", last_obs[0].item(), global_step)
+                    writer.add_scalar(f"farm/load_T{idagent}", sum(np.abs(infos["load"])), training_step)
+                writer.add_scalar(f"farm/controls/yaw_T{idagent}", last_obs[0].item(), training_step)
 
                 # store next action
                 env.step(make_yaw_action(action))
                 actions[step, :, idagent] = action
         
-        writer.add_scalar(f"farm/power_total", sum(powers), global_step)
-        writer.add_scalar(f"farm/reward", float(reward[0]), global_step)
+        writer.add_scalar(f"farm/power_total", sum(powers), training_step)
+        writer.add_scalar(f"farm/reward", float(reward[0]), training_step)
 
         # bootstrap value if not done
         # indice to learn from
@@ -353,15 +363,15 @@ if __name__ == "__main__":
                 optimisers[idagent].step()
 
                 # TRY NOT TO MODIFY: record rewards for plotting purposes
-                writer.add_scalar(f"charts/agent_{idagent}/learning_rate", optimisers[idagent].param_groups[0]["lr"], global_step)
-                writer.add_scalar(f"losses/agent_{idagent}/value_loss", v_loss.item(), global_step)
-                writer.add_scalar(f"losses/agent_{idagent}/policy_loss", pg_loss.item(), global_step)
-                # print("SPS:", int(global_step / (time.time() - start_time)))
+                writer.add_scalar(f"charts/agent_{idagent}/learning_rate", optimisers[idagent].param_groups[0]["lr"], training_step)
+                writer.add_scalar(f"losses/agent_{idagent}/value_loss", v_loss.item(), training_step)
+                writer.add_scalar(f"losses/agent_{idagent}/policy_loss", pg_loss.item(), training_step)
+                # print("SPS:", int(training_step / (time.time() - start_time)))
 
-            writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+            writer.add_scalar("charts/SPS", int(training_step / (time.time() - start_time)), training_step)
 
     if args.save_model:
-        model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
+        model_path = str(run_dir / f"{args.exp_name}.cleanrl_model")
         for idagent, agent in enumerate(agents):
             torch.save(agent.state_dict(), model_path+f"_{idagent}")
         print(f"model saved to {model_path}")
@@ -375,12 +385,12 @@ if __name__ == "__main__":
     load_ylim = args.plot_load_ylim if args.plot_load_ylim else None
     fig = plot_env_history(env, env_name=args.env_id, algorithm="ifac",
                           power_ylim=power_ylim, load_ylim=load_ylim,
-                          total_timesteps=args.total_timesteps, episode_length=None,
+                          total_iterations=args.total_iterations, episode_length=None,
                           seed=args.seed)
-    fig.savefig(str(PROJECT_ROOT / "runs" / run_name / "plot.png"))
+    fig.savefig(str(run_dir / "plot.png"))
 
     # Save the run name for batch scripts to find it
     most_recent_path = PROJECT_ROOT / "scripts" / "most_recent_models" / "ifac_path.txt"
     most_recent_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
     with open(most_recent_path, "w") as file:
-        file.write(str(PROJECT_ROOT / "runs" / run_name))
+        file.write(str(run_dir))

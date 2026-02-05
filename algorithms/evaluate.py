@@ -3,7 +3,7 @@ import random
 import time
 from dataclasses import dataclass
 import pickle
-from typing import Union
+from typing import Optional, Union
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -127,12 +127,14 @@ class Args:
     """Optional y-axis limits for power plot as (ymin, ymax)"""
     plot_load_ylim: Union[bool, tuple[float, float]] = False
     """Optional y-axis limits for load plot as (ymin, ymax)"""
-    training_timesteps: int = 0
-    """Total timesteps used for training (for plot title)"""
+    training_iterations: int = 0
+    """Total iterations used for training (for plot title) - renamed from training_timesteps"""
     training_episode_length: int = 0
     """Episode length used for training (for plot title)"""
     training_seed: int = 0
     """Seed used for training (for plot title)"""
+    fastfarm_output_dir: Optional[str] = None
+    """Output directory for FAST.Farm case files (if None, uses default __simul__/fastfarm/)"""
     
 if __name__ == "__main__":
     args = tyro.cli(Args)
@@ -148,16 +150,19 @@ if __name__ == "__main__":
         controls = {"yaw": (-30, 30, 1)}  # Discrete control with specific bounds
         print(f"Running with algorithm: {algorithm}")
     
-    env = envs.make(
-        args.env_id,
-        controls=controls, 
-        max_num_steps=args.episode_length,
-        load_coef=args.load_coef,
-        continuous_control=algorithm in ["mappo", "ippo", "ifac", "ifppo"] and not args.greedy,
-        vtk_wind=args.vtk_wind,
-        wind_speed=args.wind_speed,
-        wind_direction=args.wind_direction
-    )
+    env_kwargs = {
+        "controls": controls,
+        "episode_length": args.episode_length,
+        "load_coef": args.load_coef,
+        "continuous_control": algorithm in ["mappo", "ippo", "ifac", "ifppo"] and not args.greedy,
+        "vtk_wind": args.vtk_wind,
+        "wind_speed": args.wind_speed,
+        "wind_direction": args.wind_direction,
+    }
+    if args.fastfarm_output_dir is not None:
+        env_kwargs["output_dir"] = args.fastfarm_output_dir
+    
+    env = envs.make(args.env_id, **env_kwargs)
     args.num_agents = env.num_turbines
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
     
@@ -325,14 +330,14 @@ if __name__ == "__main__":
                 power_ylim = args.plot_power_ylim if args.plot_power_ylim else None
                 load_ylim = args.plot_load_ylim if args.plot_load_ylim else None
                 # Use training parameters if provided, otherwise use evaluation parameters
-                total_timesteps = args.training_timesteps if args.training_timesteps > 0 else None
+                total_iterations = args.training_iterations if args.training_iterations > 0 else None
                 episode_length = args.training_episode_length if args.training_episode_length > 0 else args.episode_length
                 training_seed = args.training_seed if args.training_seed > 0 else None
                 
                 algo_name = "greedy_baseline" if args.greedy else algorithm
                 fig = plot_env_history(env, env_name=args.env_id, algorithm=algo_name,
                                       power_ylim=power_ylim, load_ylim=load_ylim,
-                                      total_timesteps=total_timesteps, episode_length=episode_length,
+                                      total_iterations=total_iterations, episode_length=episode_length,
                                       seed=training_seed)
                 
                 if args.greedy:
